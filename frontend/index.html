@@ -83,8 +83,8 @@
       body { background: #fff !important; color: #111 !important; font-size: 10pt; }
       aside, header, #historyListPanel, #historyActions { display: none !important; }
       main { padding: 0 !important; overflow: visible !important; }
-      #placeholder, #historyPlaceholder { display: none !important; }
-      #characterSheet, #historySheet { display: block !important; }
+      #placeholder, #historyPlaceholder, #itemPlaceholder { display: none !important; }
+      #characterSheet, #historySheet, #itemSheet { display: block !important; }
       .panel { background: #fff !important; border: 1px solid #ccc !important; border-radius: 0 !important; page-break-inside: avoid; }
       .stat-box { background: #f5f5f5 !important; border: 1px solid #ccc !important; }
       .section-header { color: #5a0000 !important; border-bottom: 1px solid #5a0000 !important; }
@@ -111,6 +111,7 @@
     </div>
     <nav class="flex gap-1">
       <button id="navForge" onclick="switchView('forge')" class="nav-btn nav-active">⚒ Forge</button>
+      <button id="navItems" onclick="switchView('items')" class="nav-btn">⚗ Items</button>
       <button id="navHistory" onclick="switchView('history')" class="nav-btn">📜 History</button>
     </nav>
   </header>
@@ -258,6 +259,114 @@
   </div>
   </div><!-- /viewForge -->
 
+  <!-- Items View -->
+  <div id="viewItems" class="hidden flex h-[calc(100vh-73px)]">
+
+    <!-- Left panel: form -->
+    <aside class="w-80 flex-shrink-0 border-r border-border overflow-y-auto p-4 space-y-4">
+      <div class="section-header">Item Forge</div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Concept / Description</label>
+          <textarea id="itemConcept" rows="3" placeholder="e.g. A dagger once carried by an assassin who never missed her mark..." class="input-field resize-none text-sm"></textarea>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Item Type</label>
+          <input id="itemType" type="text" placeholder="e.g. Dagger, Cloak, Ring, Amulet..." class="input-field text-sm" list="itemTypeList" />
+          <datalist id="itemTypeList">
+            <option value="Dagger"><option value="Shortsword"><option value="Longsword">
+            <option value="Greatsword"><option value="Axe"><option value="Battleaxe">
+            <option value="Greataxe"><option value="Spear"><option value="Quarterstaff">
+            <option value="Mace"><option value="Warhammer"><option value="Rapier">
+            <option value="Bow"><option value="Crossbow"><option value="Hand Crossbow">
+            <option value="Staff"><option value="Wand"><option value="Rod"><option value="Orb">
+            <option value="Light Armor"><option value="Medium Armor"><option value="Heavy Armor">
+            <option value="Shield"><option value="Helmet"><option value="Gauntlets">
+            <option value="Cloak"><option value="Boots"><option value="Gloves">
+            <option value="Ring"><option value="Amulet"><option value="Belt"><option value="Bracers">
+            <option value="Potion"><option value="Scroll"><option value="Tome">
+            <option value="Bag"><option value="Instrument"><option value="Tool">
+          </datalist>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Rarity</label>
+          <select id="itemRarity" onchange="updateRarityBadge()" class="input-field text-sm">
+            <option value="Common">Common — No bonuses, flavour only</option>
+            <option value="Uncommon" selected>Uncommon — +1 to a relevant stat</option>
+            <option value="Rare">Rare — +2 stat, or +1 stat + 1 ability</option>
+            <option value="Epic">Epic — +3 stat, or +2 stat + 1 ability</option>
+            <option value="Legendary">Legendary — +3–4 stat + 2 abilities, unique</option>
+          </select>
+          <div id="itemRarityBadge" class="mt-1.5 text-xs text-center font-bold py-1 rounded tracking-wider"></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Min Level</label>
+            <select id="itemLevelMin" class="input-field text-sm">
+              <script>for(let i=1;i<=20;i++) document.write(`<option value="${i}"${i===1?' selected':''}>${i}</option>`)</script>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Max Level</label>
+            <select id="itemLevelMax" class="input-field text-sm">
+              <script>for(let i=1;i<=20;i++) document.write(`<option value="${i}"${i===5?' selected':''}>${i}</option>`)</script>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
+          <textarea id="itemNotes" rows="2" placeholder="Frost themed, once belonged to a frost giant jarl..." class="input-field resize-none text-sm"></textarea>
+        </div>
+
+        <button id="generateItemBtn" onclick="generateItem()" class="btn-primary w-full flex items-center justify-center gap-2">
+          <svg id="generateItemSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span id="generateItemBtnText">Generate Item</span>
+        </button>
+        <div id="itemTokenUsage" class="hidden flex items-center justify-center gap-1.5 text-xs text-gray-500 pt-1"></div>
+      </div>
+
+      <!-- Item save / export (shown after generation) -->
+      <div id="itemSaveSection" class="hidden space-y-2 pt-2 border-t border-border">
+        <div class="section-header">Save to Docmost</div>
+        <p class="text-xs text-gray-500">Filed under <span class="text-gold">Items → [Item Type]</span></p>
+        <button onclick="saveItem()" id="saveItemBtn" class="btn-secondary w-full flex items-center justify-center gap-2">
+          <svg id="saveItemSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span id="saveItemBtnText">Save to Docmost</span>
+        </button>
+        <div id="saveItemResult" class="hidden text-xs text-center py-1"></div>
+
+        <div class="section-header mt-3">Export</div>
+        <button onclick="exportItemToPDF()" class="btn-secondary text-xs py-2 w-full flex items-center justify-center gap-1">
+          <span>📄</span> PDF
+        </button>
+      </div>
+    </aside>
+
+    <!-- Right panel: item sheet -->
+    <main class="flex-1 overflow-y-auto p-6">
+      <div id="itemPlaceholder" class="h-full flex items-center justify-center text-gray-600">
+        <div class="text-center">
+          <div class="text-6xl mb-4">⚗</div>
+          <p class="text-lg">Fill in the form and generate an item</p>
+          <p class="text-sm mt-1">The item card will appear here</p>
+        </div>
+      </div>
+      <div id="itemSheet" class="hidden space-y-4"></div>
+    </main>
+
+  </div><!-- /viewItems -->
+
   <!-- History View -->
   <div id="viewHistory" class="hidden flex h-[calc(100vh-73px)]">
 
@@ -288,7 +397,7 @@
             <div id="historyEntryMeta" class="text-xs text-gray-500 leading-relaxed"></div>
             <div class="flex flex-wrap gap-2 items-center">
               <button onclick="exportToPDF()" class="btn-secondary text-xs py-1.5 px-3">📄 PDF</button>
-              <button onclick="exportToFoundryJSON()" class="btn-secondary text-xs py-1.5 px-3">🎲 Foundry</button>
+              <button id="historyFoundryBtn" onclick="exportToFoundryJSON()" class="btn-secondary text-xs py-1.5 px-3">🎲 Foundry</button>
               <a id="historyDocmostLink" class="hidden btn-secondary text-xs py-1.5 px-3" href="#" target="_blank" rel="noopener" style="text-decoration:none">View in Docmost →</a>
             </div>
           </div>

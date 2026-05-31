@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+import json
+import os
+import anthropic
+from models import Item, GenerateItemRequest
+from character_generator import _get_model_pricing, MODEL
+
+RARITY_GUIDELINES: dict[str, str] = {
+    "Common": (
+        "No stat bonuses. Purely flavourful or cosmetic. May have one very minor "
+        "convenience feature (keeps drinks cold, never gets dirty, always smells faintly of pine). "
+        "bonuses array must be empty. abilities array must be empty."
+    ),
+    "Uncommon": (
+        "A single +1 bonus to ONE relevant stat (attack rolls, AC, a specific ability check, "
+        "or saving throws). No active magical abilities. bonuses array has exactly one entry. "
+        "abilities array must be empty."
+    ),
+    "Rare": (
+        "Either: (A) a +2 bonus to a single stat, OR (B) a +1 stat bonus PLUS exactly ONE "
+        "magical ability (usable once per long rest, or a minor passive effect). "
+        "Attunement may be required."
+    ),
+    "Epic": (
+        "Either: (A) a +3 bonus to a single stat, OR (B) a +2 stat bonus PLUS exactly ONE "
+        "significant magical ability (powerful effect, once per day or limited charges). "
+        "Attunement very likely required. The ability should be impactful in combat or exploration."
+    ),
+    "Legendary": (
+        "A +3 or +4 stat bonus AND exactly TWO distinct magical abilities. One of a kind — "
+        "it has a name and a history. Attunement required. Both abilities should be powerful "
+        "and flavourful with clear D&D 5e mechanics (save DCs, damage dice, etc.). "
+        "This item should feel unique and storied."
+    ),
+}
+
+_SYSTEM_PROMPT = """You are a D&D 5e magic item designer. You produce detailed, flavourful, mechanically sound magic items as structured JSON.
+
+Rules:
+- Follow the rarity guidelines strictly — especially for number of bonuses and abilities
+- All bonuses must use realistic D&D 5e values: no single stat bonus above +4
+- Abilities must have clear, gameable mechanics: save DCs (8 + prof + ability), damage dice, duration, charges
+- Description: 2-3 sentences on appearance, material, sensory details
+- Lore: 2-4 sentences of in-world history and origin
+- Return ONLY valid JSON — no prose, no markdown fences"""
+
+
+def _build_prompt(req: GenerateItemRequest) -> str:
+    rarity_guide = RARITY_GUIDELINES.get(req.rarity, RARITY_GUIDELINES["Uncommon"])
+    notes = f"\nAdditional notes: {req.additional_notes}" if req.additional_notes.strip() else ""
+
+    return f"""Design a D&D 5e magic item:
+- Concept: {req.concept}
+- Item type: {req.item_type}
+- Rarity: {req.rarity}
+- Target character level range: {req.target_level_min}–{req.target_level_max}
+- Rarity rule: {rarity_guide}{notes}
+
+Return a JSON object matching this exact schema. Every field is required.
+
+{{
+  "name": "string — evocative proper name for the item",
+  "item_type": "{req.item_type}",
+  "rarity": "{req.rarity}",
+  "target_level_min": {req.target_level_min},
+  "target_level_max": {req.target_level_max},
+  "requires_attunement": bool,
+  "attunement_by": "string (e.g. 'a spellcaster', 'a paladin or cleric'; empty string if not required)",
+  "description": "string — 2-3 sentences: appearance, material, weight, sensory details",
+  "lore": "string — 2-4 sentences of in-world origin and history",
+  "bonuses": [
+    {{"stat": "string (e.g. 'Attack Rolls', 'Armor Class', 'Strength Checks', 'Constitution Saving Throws', 'Spell Attack Rolls')", "value": int}}
+  ],
+  "abilities": [
+    {{
+      "name": "string",
+      "description": "string — full mechanical description: save DC if any, damage if any, duration, range",
+      "usage": "string (e.g. 'Passive', 'Once per day (recharge at dawn)', '3 charges (1 per use, recharges 1d3 at dawn)', 'At will')",
+      "activation": "string (e.g. 'None', 'Bonus Action', 'Action', 'Reaction', 'Passive')"
+    }}
+  ],
+  "weight_lbs": number or null,
+  "value_gp": int or null
+}}
+
+Strictly follow the rarity rule above for how many bonuses and abilities to include."""
+
+
+async def generate_item(req: GenerateItemRequest) -> tuple:
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    message = client.messages.create(
+        model=MODEL,
+        max_tokens=4000,
+        system=_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": _build_prompt(req)}],
+    )
+
+    raw = message.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1]
+        raw = raw.rsplit("```", 1)[0]
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Claude returned malformed JSON: {e}")
+
+    input_tokens = message.usage.input_tokens
+    output_tokens = message.usage.output_tokens
+    input_cost, output_cost = await _get_model_pricing(MODEL)
+    cost_usd = input_tokens * input_cost + output_tokens * output_cost
+
+    usage = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+        "cost_usd": round(cost_usd, 6),
+        "model": MODEL,
+    }
+
+    return Item(**data), usage

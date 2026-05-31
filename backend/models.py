@@ -214,3 +214,49 @@ class SaveRequest(BaseModel):
     character: Character
     folder: str = "npcs"
     history_id: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Item models
+# ---------------------------------------------------------------------------
+
+class ItemBonus(BaseModel):
+    stat: str
+    value: int
+
+
+class ItemAbility(BaseModel):
+    name: str
+    description: str
+    usage: str
+    activation: str = "Passive"
+
+
+class Item(BaseModel):
+    name: str
+    item_type: str
+    rarity: str
+    target_level_min: int
+    target_level_max: int
+    requires_attunement: bool = False
+    attunement_by: str = ""
+    description: str
+    lore: str
+    bonuses: list[ItemBonus]
+    abilities: list[ItemAbility]
+    weight_lbs: Optional[float] = None
+    value_gp: Optional[int] = None
+
+
+class GenerateItemRequest(BaseModel):
+    concept: str
+    item_type: str
+    rarity: str = "Uncommon"
+    target_level_min: int = 1
+    target_level_max: int = 5
+    additional_notes: str = ""
+
+
+class SaveItemRequest(BaseModel):
+    item: Item
+    history_id: Optional[str] = None

@@ -7,10 +7,8 @@ from pathlib import Path
 
 HISTORY_DIR = Path(__file__).parent.parent / "history"
 
-_META_KEYS = {
-    "id", "timestamp", "type", "name", "race", "character_class",
-    "level", "alignment", "generic_npc", "docmost_page_id", "docmost_url",
-}
+# Keys containing full generated data blobs — stripped from list view for lightweight responses
+_DATA_KEYS = {"character", "item"}
 
 
 def _ensure_dir() -> None:
@@ -52,7 +50,7 @@ def list_entries() -> list[dict]:
     for f in sorted(HISTORY_DIR.glob("*.json"), reverse=True):
         try:
             data = json.loads(f.read_text())
-            results.append({k: v for k, v in data.items() if k in _META_KEYS})
+            results.append({k: v for k, v in data.items() if k not in _DATA_KEYS})
         except Exception:
             continue
     return results

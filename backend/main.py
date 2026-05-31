@@ -7,8 +7,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
-from models import GenerateRequest, SaveRequest, Character
+from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest
 from character_generator import generate_character
+from item_generator import generate_item
 from docmost_client import DocmostClient
 import history_store
 
@@ -83,6 +84,54 @@ async def api_save(req: SaveRequest):
                 })
             except Exception:
                 pass  # Don't fail the save if history update fails
+
+        return {"success": True, "page_id": page_id, "docmost_url": docmost_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/generate-item")
+async def api_generate_item(req: GenerateItemRequest):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+    try:
+        item, usage = await generate_item(req)
+
+        ts = datetime.now(timezone.utc)
+        entry_id = history_store.make_entry_id(ts, item.name)
+        entry = {
+            "id": entry_id,
+            "timestamp": ts.isoformat(),
+            "type": "Item",
+            "name": item.name,
+            "item_type": item.item_type,
+            "rarity": item.rarity,
+            "target_level_min": item.target_level_min,
+            "target_level_max": item.target_level_max,
+            "docmost_page_id": None,
+            "docmost_url": None,
+            "item": item.model_dump(),
+        }
+        history_store.save_entry(entry)
+
+        return {"item": item, "usage": usage, "history_id": entry_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/save-item")
+async def api_save_item(req: SaveItemRequest):
+    try:
+        page_id, docmost_url = await docmost.save_item(req.item)
+
+        if req.history_id:
+            try:
+                history_store.patch_entry(req.history_id, {
+                    "docmost_page_id": page_id,
+                    "docmost_url": docmost_url,
+                })
+            except Exception:
+                pass
 
         return {"success": True, "page_id": page_id, "docmost_url": docmost_url}
     except Exception as e:

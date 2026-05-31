@@ -6,6 +6,18 @@ let selectedDetail = 'medium';
 let historyEntries = [];
 let selectedHistoryEntryId = null;
 
+let currentItem = null;
+let currentItemHistoryId = null;
+let selectedHistoryEntryType = null;  // 'Character', 'Generic NPC', 'Item', etc.
+
+const RARITY_COLORS = {
+  Common:    '#9d9d9d',
+  Uncommon:  '#1eff00',
+  Rare:      '#0070dd',
+  Epic:      '#a335ee',
+  Legendary: '#ff8000',
+};
+
 // -----------------------------------------------------------------------
 // Config / startup
 // -----------------------------------------------------------------------
@@ -45,12 +57,28 @@ function setDetail(level) {
 
 function switchView(view) {
   document.getElementById('viewForge').classList.toggle('hidden', view !== 'forge');
+  document.getElementById('viewItems').classList.toggle('hidden', view !== 'items');
   document.getElementById('viewHistory').classList.toggle('hidden', view !== 'history');
   document.getElementById('navForge').classList.toggle('nav-active', view === 'forge');
+  document.getElementById('navItems').classList.toggle('nav-active', view === 'items');
   document.getElementById('navHistory').classList.toggle('nav-active', view === 'history');
   if (view === 'history' && historyEntries.length === 0) {
     loadHistoryList();
   }
+  if (view === 'items') {
+    updateRarityBadge();
+  }
+}
+
+function updateRarityBadge() {
+  const rarity = document.getElementById('itemRarity').value;
+  const badge = document.getElementById('itemRarityBadge');
+  const color = RARITY_COLORS[rarity] || '#9d9d9d';
+  badge.textContent = rarity.toUpperCase();
+  badge.style.color = color;
+  badge.style.borderColor = color;
+  badge.style.border = `1px solid ${color}`;
+  badge.style.background = `${color}18`;
 }
 
 // -----------------------------------------------------------------------
@@ -87,7 +115,7 @@ function renderHistoryList() {
         <span class="text-sm font-bold text-parchment leading-tight">${entry.name}</span>
         <span class="source-tag flex-shrink-0" style="color:${_typeColor(entry.type)}">${entry.type}</span>
       </div>
-      <div class="text-xs text-gray-500">${entry.character_class} · ${entry.race} · Lvl ${entry.level}</div>
+      <div class="text-xs text-gray-500">${_entrySubtitle(entry)}</div>
       <div class="text-xs text-gray-600 mt-0.5">${_formatTimestamp(entry.timestamp)}</div>
       ${entry.docmost_page_id ? '<div class="text-xs text-green-600 mt-0.5">✓ Saved to Docmost</div>' : ''}
     `;
@@ -108,14 +136,32 @@ async function openHistoryEntry(entryId) {
     if (!r.ok) throw new Error('Entry not found');
     const entry = await r.json();
 
-    currentCharacter = entry.character;
+    selectedHistoryEntryType = entry.type;
     currentHistoryId = entry.id;
 
+    if (entry.type === 'Item') {
+      currentItem = entry.item;
+      currentCharacter = null;
+    } else {
+      currentCharacter = entry.character;
+      currentItem = null;
+    }
+
     // Meta line
-    document.getElementById('historyEntryMeta').innerHTML =
-      `<span class="font-bold text-parchment">${entry.name}</span>` +
-      `<span class="ml-2">${entry.character_class} · ${entry.race} · Level ${entry.level} · ${entry.alignment}</span>` +
-      `<span class="ml-2 text-gray-600">Generated ${_formatTimestamp(entry.timestamp)}</span>`;
+    const isItem = entry.type === 'Item';
+    let metaHtml = `<span class="font-bold text-parchment">${entry.name}</span>`;
+    if (isItem) {
+      const rarityColor = RARITY_COLORS[entry.rarity] || '#9d9d9d';
+      metaHtml += `<span class="ml-2">${entry.item_type} · <span style="color:${rarityColor}">${entry.rarity}</span> · Levels ${entry.target_level_min}–${entry.target_level_max}</span>`;
+    } else {
+      metaHtml += `<span class="ml-2">${entry.character_class} · ${entry.race} · Level ${entry.level} · ${entry.alignment}</span>`;
+    }
+    metaHtml += `<span class="ml-2 text-gray-600">Generated ${_formatTimestamp(entry.timestamp)}</span>`;
+    document.getElementById('historyEntryMeta').innerHTML = metaHtml;
+
+    // Show/hide action bar elements based on entry type
+    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isItem);
+    document.getElementById('historySaveFolder').classList.toggle('hidden', isItem);
 
     // Docmost link
     const link = document.getElementById('historyDocmostLink');
@@ -132,7 +178,11 @@ async function openHistoryEntry(entryId) {
 
     const historySheet = document.getElementById('historySheet');
     historySheet.innerHTML = '';
-    renderSheet(entry.character, historySheet);
+    if (isItem) {
+      renderItemSheet(entry.item, historySheet);
+    } else {
+      renderSheet(entry.character, historySheet);
+    }
   } catch (e) {
     document.getElementById('historyPlaceholder').querySelector('p').textContent = `Error: ${e.message}`;
   }
@@ -140,13 +190,22 @@ async function openHistoryEntry(entryId) {
 
 function _typeColor(type) {
   const map = {
-    'Character': '#c9a227',
+    'Character':   '#c9a227',
     'Generic NPC': '#8a7560',
-    'Beast': '#4a7c59',
-    'Location': '#4a6e9e',
-    'Encounter': '#8b1a1a',
+    'Beast':       '#4a7c59',
+    'Location':    '#4a6e9e',
+    'Encounter':   '#8b1a1a',
+    'Item':        '#a335ee',
   };
   return map[type] || '#8a7560';
+}
+
+function _entrySubtitle(entry) {
+  if (entry.type === 'Item') {
+    const rarityColor = RARITY_COLORS[entry.rarity] || '#9d9d9d';
+    return `${entry.item_type} · <span style="color:${rarityColor}">${entry.rarity}</span> · Lvl ${entry.target_level_min}–${entry.target_level_max}`;
+  }
+  return `${entry.character_class} · ${entry.race} · Lvl ${entry.level}`;
 }
 
 function _formatTimestamp(ts) {
@@ -267,22 +326,31 @@ async function saveCharacter() {
 }
 
 async function saveFromHistory() {
-  if (!currentCharacter) return;
-  const folder = document.getElementById('historySaveFolder').value;
+  const isItem = selectedHistoryEntryType === 'Item';
+  if (isItem ? !currentItem : !currentCharacter) return;
+
   setBusy('historySaveBtn', 'historySaveSpinner', 'historySaveBtnText', true, 'Saving…');
   const resultEl = document.getElementById('historySaveResult');
   resultEl.classList.add('hidden');
 
   try {
-    const r = await fetch('/api/save', {
+    let endpoint, body;
+    if (isItem) {
+      endpoint = '/api/save-item';
+      body = { item: currentItem, history_id: currentHistoryId };
+    } else {
+      endpoint = '/api/save';
+      body = { character: currentCharacter, folder: document.getElementById('historySaveFolder').value, history_id: currentHistoryId };
+    }
+
+    const r = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ character: currentCharacter, folder, history_id: currentHistoryId }),
+      body: JSON.stringify(body),
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || 'Save failed');
 
-    // Update in-memory entry and re-render list badge
     const entry = historyEntries.find(e => e.id === currentHistoryId);
     if (entry) {
       entry.docmost_page_id = data.page_id;
@@ -290,7 +358,6 @@ async function saveFromHistory() {
       renderHistoryList();
     }
 
-    // Show the "View in Docmost" link
     if (data.docmost_url) {
       const link = document.getElementById('historyDocmostLink');
       link.href = data.docmost_url;
@@ -551,8 +618,8 @@ function _crToXP(cr) {
 // Token usage display
 // -----------------------------------------------------------------------
 
-function _showTokenUsage(usage) {
-  const el = document.getElementById('tokenUsage');
+function _showTokenUsage(usage, elementId = 'tokenUsage') {
+  const el = document.getElementById(elementId);
   if (!el || !usage) return;
   const costStr = usage.cost_usd < 0.001
     ? `< $0.001`
@@ -915,6 +982,199 @@ function renderSpellList(title, spells) {
     wrap.appendChild(g);
   }
   return wrap;
+}
+
+// -----------------------------------------------------------------------
+// Item Forge: generate
+// -----------------------------------------------------------------------
+
+async function generateItem() {
+  const concept = document.getElementById('itemConcept').value.trim();
+  const itemType = document.getElementById('itemType').value.trim();
+
+  if (!concept || !itemType) {
+    alert('Please fill in Concept and Item Type before generating.');
+    return;
+  }
+
+  const minLevel = parseInt(document.getElementById('itemLevelMin').value);
+  const maxLevel = parseInt(document.getElementById('itemLevelMax').value);
+  if (minLevel > maxLevel) {
+    alert('Min Level cannot be greater than Max Level.');
+    return;
+  }
+
+  setBusy('generateItemBtn', 'generateItemSpinner', 'generateItemBtnText', true, 'Generating…');
+  document.getElementById('itemSheet').classList.add('hidden');
+  document.getElementById('itemPlaceholder').classList.remove('hidden');
+  document.getElementById('itemSaveSection').classList.add('hidden');
+  document.getElementById('itemTokenUsage').classList.add('hidden');
+
+  try {
+    const body = {
+      concept,
+      item_type: itemType,
+      rarity: document.getElementById('itemRarity').value,
+      target_level_min: minLevel,
+      target_level_max: maxLevel,
+      additional_notes: document.getElementById('itemNotes').value.trim(),
+    };
+
+    const r = await fetch('/api/generate-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || 'Generation failed');
+    }
+
+    const data = await r.json();
+    currentItem = data.item;
+    currentItemHistoryId = data.history_id ?? null;
+
+    document.getElementById('itemPlaceholder').classList.add('hidden');
+    document.getElementById('itemSheet').classList.remove('hidden');
+    renderItemSheet(currentItem);
+    document.getElementById('itemSaveSection').classList.remove('hidden');
+    _showTokenUsage(data.usage, 'itemTokenUsage');
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+  } finally {
+    setBusy('generateItemBtn', 'generateItemSpinner', 'generateItemBtnText', false, 'Generate Item');
+  }
+}
+
+// -----------------------------------------------------------------------
+// Item: save to Docmost
+// -----------------------------------------------------------------------
+
+async function saveItem() {
+  if (!currentItem) return;
+  setBusy('saveItemBtn', 'saveItemSpinner', 'saveItemBtnText', true, 'Saving…');
+  const resultEl = document.getElementById('saveItemResult');
+  resultEl.classList.add('hidden');
+
+  try {
+    const r = await fetch('/api/save-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item: currentItem, history_id: currentItemHistoryId }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Save failed');
+
+    const entry = historyEntries.find(e => e.id === currentItemHistoryId);
+    if (entry) {
+      entry.docmost_page_id = data.page_id;
+      entry.docmost_url = data.docmost_url;
+    }
+
+    resultEl.textContent = `✓ Saved to Items / ${currentItem.item_type}`;
+    resultEl.className = 'text-xs text-center py-1 text-green-400';
+    resultEl.classList.remove('hidden');
+  } catch (e) {
+    resultEl.textContent = `✗ ${e.message}`;
+    resultEl.className = 'text-xs text-center py-1 text-red-400';
+    resultEl.classList.remove('hidden');
+  } finally {
+    setBusy('saveItemBtn', 'saveItemSpinner', 'saveItemBtnText', false, 'Save to Docmost');
+  }
+}
+
+function exportItemToPDF() {
+  if (!currentItem) return;
+  window.print();
+}
+
+// -----------------------------------------------------------------------
+// Item sheet renderer
+// -----------------------------------------------------------------------
+
+function renderItemSheet(item, containerEl) {
+  const sheet = containerEl || document.getElementById('itemSheet');
+  sheet.innerHTML = '';
+
+  const rarityColor = RARITY_COLORS[item.rarity] || '#9d9d9d';
+
+  // Header
+  const header = el('div', 'panel');
+  let attuneLine = '';
+  if (item.requires_attunement) {
+    const byNote = item.attunement_by ? ` by ${item.attunement_by}` : '';
+    attuneLine = `<span class="source-tag" style="color:#60a5fa;border-color:#60a5fa">⚡ Requires Attunement${byNote}</span>`;
+  }
+  header.innerHTML = `
+    <h2 class="text-3xl font-bold mb-2" style="color:${rarityColor}">${item.name}</h2>
+    <div class="flex flex-wrap gap-2 text-sm mb-2">
+      <span class="source-tag">${item.item_type}</span>
+      <span class="source-tag font-bold" style="color:${rarityColor};border-color:${rarityColor}">${item.rarity}</span>
+      <span class="source-tag">Levels ${item.target_level_min}–${item.target_level_max}</span>
+      ${attuneLine}
+    </div>
+    <p class="text-sm text-gray-300 italic leading-relaxed">${item.description}</p>
+  `;
+  sheet.appendChild(header);
+
+  // Lore
+  if (item.lore) {
+    sheet.appendChild(sectionHeader('Lore'));
+    const lorePanel = el('div', 'panel');
+    lorePanel.innerHTML = `<p class="text-sm text-gray-400 leading-relaxed italic">${item.lore}</p>`;
+    sheet.appendChild(lorePanel);
+  }
+
+  // Bonuses
+  if (item.bonuses && item.bonuses.length) {
+    sheet.appendChild(sectionHeader('Bonuses'));
+    const bonusPanel = el('div', 'panel space-y-1');
+    for (const b of item.bonuses) {
+      const row = el('div', 'flex items-center justify-between py-1 border-b border-panelbg');
+      row.innerHTML = `
+        <span class="text-sm text-parchment">${b.stat}</span>
+        <span class="text-lg font-bold" style="color:${rarityColor}">${b.value >= 0 ? '+' : ''}${b.value}</span>
+      `;
+      bonusPanel.appendChild(row);
+    }
+    sheet.appendChild(bonusPanel);
+  }
+
+  // Magical Abilities
+  if (item.abilities && item.abilities.length) {
+    sheet.appendChild(sectionHeader('Magical Abilities'));
+    const abPanel = el('div', 'panel space-y-4');
+    for (const a of item.abilities) {
+      const ab = el('div', 'border-l-2 pl-3');
+      ab.style.borderColor = rarityColor;
+      const activationTag = a.activation && a.activation !== 'Passive' && a.activation !== 'None'
+        ? `<span class="source-tag">${a.activation}</span>` : '';
+      ab.innerHTML = `
+        <div class="flex flex-wrap items-center gap-2 mb-1">
+          <span class="text-sm font-bold text-parchment">${a.name}</span>
+          <span class="source-tag">${a.usage}</span>
+          ${activationTag}
+        </div>
+        <p class="text-xs text-gray-300 leading-relaxed">${a.description}</p>
+      `;
+      abPanel.appendChild(ab);
+    }
+    sheet.appendChild(abPanel);
+  }
+
+  // Details
+  const details = [];
+  if (item.weight_lbs != null) details.push(['Weight', `${item.weight_lbs} lbs`]);
+  if (item.value_gp != null) details.push(['Value', `${item.value_gp.toLocaleString()} gp`]);
+  if (details.length) {
+    sheet.appendChild(sectionHeader('Details'));
+    const detailPanel = el('div', 'panel flex flex-wrap gap-6 text-sm');
+    for (const [label, val] of details) {
+      detailPanel.innerHTML += `<div><span class="text-gold font-bold">${label}:</span> <span class="text-gray-300">${val}</span></div>`;
+    }
+    sheet.appendChild(detailPanel);
+  }
 }
 
 // Init

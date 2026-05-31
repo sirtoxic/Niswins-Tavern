@@ -22,7 +22,7 @@ import httpx
 import yaml
 import logging
 from pathlib import Path
-from models import Character
+from models import Character, Item
 
 logger = logging.getLogger(__name__)
 
@@ -173,29 +173,30 @@ class DocmostClient:
     # Folder pages (top-level parent pages acting as folders)
     # ------------------------------------------------------------------
 
-    async def _get_or_create_folder_page(self, space_id: str, folder_name: str) -> str:
-        cache_key = f"{space_id}:{folder_name}"
+    async def _get_or_create_folder_page(
+        self, space_id: str, title: str, parent_page_id: str | None = None
+    ) -> str:
+        # Keep root-level key format backward compatible with existing cache entries
+        cache_key = f"{space_id}:{parent_page_id}:{title}" if parent_page_id else f"{space_id}:{title}"
 
-        # Check persistent cache first — verify the page still exists before trusting it
         if cache_key in self._folder_cache:
             cached_id = self._folder_cache[cache_key]
             if await self._page_exists(cached_id):
                 return cached_id
-            # Cached page was deleted — remove stale entry and fall through to create
             del self._folder_cache[cache_key]
             _save_persistent_folder_cache(self._folder_cache)
             logger.warning(f"Cached folder page {cached_id} no longer exists, recreating")
 
         page_data = await self._create_page(
             space_id=space_id,
-            title=folder_name,
-            content=f"# {folder_name}\n\n",
-            parent_page_id=None,
+            title=title,
+            content=f"# {title}\n\n",
+            parent_page_id=parent_page_id,
         )
         folder_id = page_data["id"]
         self._folder_cache[cache_key] = folder_id
         _save_persistent_folder_cache(self._folder_cache)
-        logger.info(f"Created folder page: {folder_name} ({folder_id})")
+        logger.info(f"Created folder page: {title} ({folder_id})")
         return folder_id
 
     # ------------------------------------------------------------------
@@ -394,4 +395,98 @@ class DocmostClient:
             logger.warning(f"Could not update folder index: {e}")
 
         logger.info(f"Saved '{char.name}' to Docmost (page {page_id}, url={page_url})")
+        return page_id, page_url
+
+    # ------------------------------------------------------------------
+    # Item → Markdown
+    # ------------------------------------------------------------------
+
+    def _item_to_markdown(self, item: Item) -> str:
+        lines = []
+
+        def h(level: int, text: str):
+            lines.append(f"{'#' * level} {text}\n")
+
+        h(1, item.name)
+
+        attune_note = ""
+        if item.requires_attunement:
+            attune_note = " · Requires Attunement"
+            if item.attunement_by:
+                attune_note += f" by {item.attunement_by}"
+
+        lines.append(
+            f"**{item.item_type}** · **{item.rarity}** · "
+            f"Target Level {item.target_level_min}–{item.target_level_max}{attune_note}\n"
+        )
+
+        h(2, "Description")
+        lines.append(item.description + "\n")
+
+        h(2, "Lore")
+        lines.append(item.lore + "\n")
+
+        if item.bonuses:
+            h(2, "Bonuses")
+            for b in item.bonuses:
+                sign = "+" if b.value >= 0 else ""
+                lines.append(f"- **{b.stat}:** {sign}{b.value}")
+            lines.append("")
+
+        if item.abilities:
+            h(2, "Magical Abilities")
+            for a in item.abilities:
+                h(3, a.name)
+                activation = f" · *{a.activation}*" if a.activation and a.activation not in ("Passive", "None") else ""
+                lines.append(f"*{a.usage}*{activation}\n")
+                lines.append(a.description + "\n")
+
+        details = []
+        if item.weight_lbs is not None:
+            details.append(f"**Weight:** {item.weight_lbs} lbs")
+        if item.value_gp is not None:
+            details.append(f"**Value:** {item.value_gp:,} gp")
+        if details:
+            h(2, "Details")
+            for d in details:
+                lines.append(d)
+            lines.append("")
+
+        return "\n".join(lines)
+
+    async def save_item(self, item: Item) -> tuple[str, str]:
+        """Returns (page_id, page_url). Saves under Items/{item_type}/."""
+        await self._ensure_auth()
+        await self._ensure_space()
+
+        items_root_id = await self._get_or_create_folder_page(self._space_id, "Items")
+        type_folder_id = await self._get_or_create_folder_page(
+            self._space_id, item.item_type, parent_page_id=items_root_id
+        )
+
+        content = self._item_to_markdown(item)
+        page_data = await self._create_page(
+            space_id=self._space_id,
+            title=item.name,
+            content=content,
+            parent_page_id=type_folder_id,
+        )
+
+        page_id = page_data["id"]
+        page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
+        base = self.base_url
+        if base.endswith("/api"):
+            base = base[:-4]
+        page_url = f"{base}/s/{self._space_slug}/p/{page_slug}"
+
+        entry = (
+            f"- **{item.name}** — {item.rarity} · "
+            f"Levels {item.target_level_min}–{item.target_level_max}\n"
+        )
+        try:
+            await self._append_to_page(type_folder_id, entry)
+        except Exception as e:
+            logger.warning(f"Could not update item folder index: {e}")
+
+        logger.info(f"Saved item '{item.name}' to Docmost (page {page_id}, url={page_url})")
         return page_id, page_url
