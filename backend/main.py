@@ -73,13 +73,7 @@ async def api_generate(req: GenerateRequest):
 @app.post("/api/save")
 async def api_save(req: SaveRequest):
     try:
-        page_id = await docmost.save_character(req.character, req.folder)
-
-        cfg = _load_config()
-        base = cfg["docmost"]["url"].rstrip("/")
-        if base.endswith("/api"):
-            base = base[:-4]
-        docmost_url = f"{base}/page/{page_id}"
+        page_id, docmost_url = await docmost.save_character(req.character, req.folder)
 
         if req.history_id:
             try:

@@ -5,14 +5,19 @@ Discovered API behaviour:
   POST /api/auth/login       → sets authToken cookie (JWT)
   POST /api/spaces           → lists spaces  { data: { items: [...] } }
   POST /api/pages/create     → create page   { title, spaceId, parentPageId?, content, format }
+                               response includes data.slug and data.slugId for URL construction
   POST /api/pages/update     → update page   { pageId, operation, content, format }
-  GET  /api/pages/:id        → fetch page    { data: { content, ... } }
+  GET  /api/pages/:id        → fetch page    { data: { content, slug, slugId, ... } }
 
 Auth: Bearer token in Authorization header (extracted from authToken cookie after login).
+
+URL format: {base}/s/{space_slug}/p/{page_slug}
+  e.g. https://wiki.example.com/s/general/p/my-character-5A8xj8JFin
 """
 
 from __future__ import annotations
 
+import json
 import httpx
 import yaml
 import logging
@@ -22,6 +27,8 @@ from models import Character
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+# Persistent cache so folder page IDs survive process restarts
+_FOLDER_CACHE_FILE = Path(__file__).parent.parent / "history" / ".folder_cache.json"
 
 
 def _load_config() -> dict:
@@ -33,6 +40,20 @@ def _sign(n: int) -> str:
     return f"+{n}" if n >= 0 else str(n)
 
 
+def _load_persistent_folder_cache() -> dict:
+    if _FOLDER_CACHE_FILE.exists():
+        try:
+            return json.loads(_FOLDER_CACHE_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_persistent_folder_cache(cache: dict) -> None:
+    _FOLDER_CACHE_FILE.parent.mkdir(exist_ok=True)
+    _FOLDER_CACHE_FILE.write_text(json.dumps(cache, indent=2))
+
+
 class DocmostClient:
     def __init__(self):
         cfg = _load_config()["docmost"]
@@ -41,8 +62,9 @@ class DocmostClient:
         self.password = cfg["password"]
         self.folder_names: dict[str, str] = cfg["folders"]
         self._token: str | None = None
-        self._space_cache: dict[str, str] = {}   # name → id
-        self._folder_cache: dict[str, str] = {}  # "space_id:folder_name" → page_id
+        self._space_id: str | None = None
+        self._space_slug: str | None = None
+        self._folder_cache: dict[str, str] = _load_persistent_folder_cache()
 
     # ------------------------------------------------------------------
     # Auth
@@ -73,24 +95,20 @@ class DocmostClient:
     # Spaces  (POST /spaces returns list)
     # ------------------------------------------------------------------
 
-    async def _get_spaces(self) -> list[dict]:
+    async def _ensure_space(self) -> None:
+        """Fetches and caches the first space's id and slug."""
+        if self._space_id:
+            return
         async with httpx.AsyncClient() as client:
             r = await client.post(f"{self.base_url}/spaces", json={}, headers=self._headers())
             r.raise_for_status()
-            data = r.json()
-            return data.get("data", {}).get("items", [])
-
-    async def _get_first_space(self) -> str:
-        """Returns the ID of the first available space (Docmost community has one space)."""
-        if "default" in self._space_cache:
-            return self._space_cache["default"]
-        spaces = await self._get_spaces()
-        if not spaces:
+            items = r.json().get("data", {}).get("items", [])
+        if not items:
             raise RuntimeError("No spaces found in Docmost workspace")
-        space_id = spaces[0]["id"]
-        self._space_cache["default"] = space_id
-        logger.info(f"Using Docmost space: {spaces[0]['name']} ({space_id})")
-        return space_id
+        space = items[0]
+        self._space_id = space["id"]
+        self._space_slug = space.get("slug", "general")
+        logger.info(f"Using Docmost space: {space['name']} ({self._space_id}, slug={self._space_slug})")
 
     # ------------------------------------------------------------------
     # Pages
@@ -102,13 +120,23 @@ class DocmostClient:
             r.raise_for_status()
             return r.json().get("data", r.json())
 
+    async def _page_exists(self, page_id: str) -> bool:
+        """Check a cached folder page_id is still valid."""
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(f"{self.base_url}/pages/{page_id}", headers=self._headers())
+                return r.status_code == 200
+        except Exception:
+            return False
+
     async def _create_page(
         self,
         space_id: str,
         title: str,
         content: str,
         parent_page_id: str | None = None,
-    ) -> str:
+    ) -> dict:
+        """Create a page and return the full data dict (includes id, slug, slugId)."""
         payload = {
             "title": title,
             "spaceId": space_id,
@@ -125,7 +153,7 @@ class DocmostClient:
                 headers=self._headers(),
             )
             r.raise_for_status()
-            return r.json()["data"]["id"]
+            return r.json()["data"]
 
     async def _append_to_page(self, page_id: str, markdown: str):
         async with httpx.AsyncClient() as client:
@@ -147,30 +175,26 @@ class DocmostClient:
 
     async def _get_or_create_folder_page(self, space_id: str, folder_name: str) -> str:
         cache_key = f"{space_id}:{folder_name}"
+
+        # Check persistent cache first — verify the page still exists before trusting it
         if cache_key in self._folder_cache:
-            return self._folder_cache[cache_key]
+            cached_id = self._folder_cache[cache_key]
+            if await self._page_exists(cached_id):
+                return cached_id
+            # Cached page was deleted — remove stale entry and fall through to create
+            del self._folder_cache[cache_key]
+            _save_persistent_folder_cache(self._folder_cache)
+            logger.warning(f"Cached folder page {cached_id} no longer exists, recreating")
 
-        # Search existing top-level pages for a matching title
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                f"{self.base_url}/pages/list",
-                json={"spaceId": space_id},
-                headers=self._headers(),
-            )
-            if r.status_code == 200:
-                items = r.json().get("data", {}).get("items", [])
-                for p in items:
-                    if p.get("title", "").lower() == folder_name.lower() and not p.get("parentPageId"):
-                        self._folder_cache[cache_key] = p["id"]
-                        return p["id"]
-
-        folder_id = await self._create_page(
+        page_data = await self._create_page(
             space_id=space_id,
             title=folder_name,
             content=f"# {folder_name}\n\n",
             parent_page_id=None,
         )
+        folder_id = page_data["id"]
         self._folder_cache[cache_key] = folder_id
+        _save_persistent_folder_cache(self._folder_cache)
         logger.info(f"Created folder page: {folder_name} ({folder_id})")
         return folder_id
 
@@ -334,20 +358,30 @@ class DocmostClient:
     # Public API
     # ------------------------------------------------------------------
 
-    async def save_character(self, char: Character, folder_key: str = "npcs") -> str:
+    async def save_character(self, char: Character, folder_key: str = "npcs") -> tuple[str, str]:
+        """Returns (page_id, page_url)."""
         await self._ensure_auth()
+        await self._ensure_space()
 
         folder_name = self.folder_names.get(folder_key, "NPCs")
-        space_id = await self._get_first_space()
-        folder_page_id = await self._get_or_create_folder_page(space_id, folder_name)
+        folder_page_id = await self._get_or_create_folder_page(self._space_id, folder_name)
 
         content = self._character_to_markdown(char)
-        page_id = await self._create_page(
-            space_id=space_id,
+        page_data = await self._create_page(
+            space_id=self._space_id,
             title=char.name,
             content=content,
             parent_page_id=folder_page_id,
         )
+
+        page_id = page_data["id"]
+        # Docmost URL: /s/{space_slug}/p/{page_slug}
+        # page_data should include a 'slug' field like "my-character-5A8xj8JFin"
+        page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
+        base = self.base_url
+        if base.endswith("/api"):
+            base = base[:-4]
+        page_url = f"{base}/s/{self._space_slug}/p/{page_slug}"
 
         # Append a one-line entry to the folder index page
         entry = (
@@ -359,5 +393,5 @@ class DocmostClient:
         except Exception as e:
             logger.warning(f"Could not update folder index: {e}")
 
-        logger.info(f"Saved '{char.name}' to Docmost (page {page_id})")
-        return page_id
+        logger.info(f"Saved '{char.name}' to Docmost (page {page_id}, url={page_url})")
+        return page_id, page_url
