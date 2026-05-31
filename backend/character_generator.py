@@ -192,7 +192,7 @@ async def generate_character(req: GenerateRequest) -> Character:
 
     message = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=8192,
+        max_tokens=16000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": build_user_prompt(req)}],
     )
@@ -204,5 +204,12 @@ async def generate_character(req: GenerateRequest) -> Character:
         raw = raw.split("\n", 1)[1]
         raw = raw.rsplit("```", 1)[0]
 
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Claude returned malformed JSON (likely truncated). "
+            f"Try using 'Short' backstory detail to reduce output size. Error: {e}"
+        )
+
     return Character(**data)

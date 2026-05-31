@@ -68,6 +68,27 @@
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #1a1209; }
     ::-webkit-scrollbar-thumb { background: #5a3e28; border-radius: 3px; }
+
+    @media print {
+      body { background: #fff !important; color: #111 !important; font-size: 10pt; }
+      aside, header { display: none !important; }
+      main { padding: 0 !important; overflow: visible !important; }
+      #placeholder { display: none !important; }
+      #characterSheet { display: block !important; }
+      .panel { background: #fff !important; border: 1px solid #ccc !important; border-radius: 0 !important; page-break-inside: avoid; }
+      .stat-box { background: #f5f5f5 !important; border: 1px solid #ccc !important; }
+      .section-header { color: #5a0000 !important; border-bottom: 1px solid #5a0000 !important; }
+      .text-gold, .text-parchment { color: #111 !important; }
+      .text-gray-300, .text-gray-400, .text-gray-500, .text-gray-600 { color: #444 !important; }
+      .breakdown-text { color: #666 !important; }
+      .source-tag { background: #eee !important; border: 1px solid #ccc !important; color: #333 !important; }
+      .border-panelbg { border-color: #ddd !important; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #ddd; padding: 3px 6px; font-size: 9pt; }
+      h2 { color: #5a0000 !important; font-size: 11pt; }
+      .grid { display: grid; }
+      a { color: #111 !important; }
+    }
   </style>
 </head>
 <body class="min-h-screen">
@@ -154,7 +175,7 @@
         </button>
       </div>
 
-      <!-- Save section (shown after generation) -->
+      <!-- Save / Export section (shown after generation) -->
       <div id="saveSection" class="hidden space-y-2 pt-2 border-t border-border">
         <div class="section-header">Save to Docmost</div>
         <div>
@@ -171,6 +192,16 @@
           <span id="saveBtnText">Save to Docmost</span>
         </button>
         <div id="saveResult" class="hidden text-xs text-center py-1"></div>
+
+        <div class="section-header mt-3">Export</div>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="exportToPDF()" class="btn-secondary text-xs py-2 flex items-center justify-center gap-1">
+            <span>📄</span> PDF
+          </button>
+          <button onclick="exportToFoundryJSON()" class="btn-secondary text-xs py-2 flex items-center justify-center gap-1">
+            <span>🎲</span> Foundry VTT
+          </button>
+        </div>
       </div>
     </aside>
 

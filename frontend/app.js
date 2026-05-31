@@ -119,6 +119,251 @@ async function saveCharacter() {
 }
 
 // -----------------------------------------------------------------------
+// Export: PDF
+// -----------------------------------------------------------------------
+
+function exportToPDF() {
+  if (!currentCharacter) return;
+  window.print();
+}
+
+// -----------------------------------------------------------------------
+// Export: Foundry VTT (dnd5e system 3.x actor format)
+// -----------------------------------------------------------------------
+
+function exportToFoundryJSON() {
+  if (!currentCharacter) return;
+  const c = currentCharacter;
+
+  const abilityMap = { strength: 'str', dexterity: 'dex', constitution: 'con', intelligence: 'int', wisdom: 'wis', charisma: 'cha' };
+  const skillMap = {
+    acrobatics: { abbr: 'acr', ability: 'dex' }, animal_handling: { abbr: 'ani', ability: 'wis' },
+    arcana: { abbr: 'arc', ability: 'int' }, athletics: { abbr: 'ath', ability: 'str' },
+    deception: { abbr: 'dec', ability: 'cha' }, history: { abbr: 'his', ability: 'int' },
+    insight: { abbr: 'ins', ability: 'wis' }, intimidation: { abbr: 'itm', ability: 'cha' },
+    investigation: { abbr: 'inv', ability: 'int' }, medicine: { abbr: 'med', ability: 'wis' },
+    nature: { abbr: 'nat', ability: 'int' }, perception: { abbr: 'prc', ability: 'wis' },
+    performance: { abbr: 'prf', ability: 'cha' }, persuasion: { abbr: 'per', ability: 'cha' },
+    religion: { abbr: 'rel', ability: 'int' }, sleight_of_hand: { abbr: 'slt', ability: 'dex' },
+    stealth: { abbr: 'ste', ability: 'dex' }, survival: { abbr: 'sur', ability: 'wis' },
+  };
+
+  // Abilities
+  const abilities = {};
+  for (const [full, abbr] of Object.entries(abilityMap)) {
+    const a = c.ability_scores[full];
+    const st = c.saving_throws[full];
+    abilities[abbr] = {
+      value: a.total,
+      proficient: st.proficient ? 1 : 0,
+      bonuses: { check: '', save: '' },
+    };
+  }
+
+  // Skills (0 = none, 1 = proficient, 2 = expertise)
+  const skills = {};
+  for (const [full, { abbr, ability }] of Object.entries(skillMap)) {
+    const sk = c.skills[full];
+    skills[abbr] = {
+      value: sk.expertise ? 2 : sk.proficient ? 1 : 0,
+      ability,
+      bonuses: { check: '', passive: '' },
+    };
+  }
+
+  // Spell slots
+  const spells = {};
+  for (let i = 1; i <= 9; i++) {
+    const count = c.spellcasting ? (c.spellcasting.spell_slots[`level_${i}`] || 0) : 0;
+    spells[`spell${i}`] = { value: count, override: null, max: count };
+  }
+  spells.spell0 = { value: 0, override: null };
+
+  // Items: weapons
+  const items = [];
+  for (const atk of (c.attacks || [])) {
+    const dmgMatch = atk.damage_dice.match(/(\d+)d(\d+)/);
+    const dmgNum = dmgMatch ? parseInt(dmgMatch[1]) : 1;
+    const dmgDen = dmgMatch ? parseInt(dmgMatch[2]) : 6;
+    const isMelee = !atk.range || atk.range === '5 ft.' || atk.range.startsWith('5');
+    const actionType = isMelee ? 'mwak' : 'rwak';
+    const abilityUsed = (atk.attack_bonus.ability_used || 'STR').toLowerCase().substring(0, 3);
+
+    items.push({
+      name: atk.name,
+      type: 'weapon',
+      img: 'icons/svg/sword.svg',
+      system: {
+        description: { value: atk.notes || '' },
+        quantity: 1,
+        equipped: true,
+        identified: true,
+        rarity: 'common',
+        activation: { type: 'action', cost: 1, condition: '' },
+        range: { value: isMelee ? 5 : parseInt(atk.range) || 30, units: 'ft' },
+        ability: abilityUsed,
+        actionType,
+        attack: { bonus: '', flat: false },
+        critical: { threshold: null, damage: '' },
+        damage: {
+          base: {
+            number: dmgNum, denomination: dmgDen,
+            bonus: atk.damage_bonus ? String(atk.damage_bonus) : '',
+            types: [atk.damage_type?.toLowerCase() || 'slashing'],
+            custom: { enabled: false, formula: '' },
+          },
+        },
+        properties: atk.properties ? atk.properties.map(p => p.toLowerCase().replace(/[^a-z]/g, '')) : [],
+      },
+    });
+  }
+
+  // Items: spells
+  if (c.spellcasting) {
+    const schoolAbbr = { abjuration:'abj', conjuration:'con', divination:'div', enchantment:'enc', evocation:'evo', illusion:'ill', necromancy:'nec', transmutation:'trs' };
+    const allSpells = [...(c.spellcasting.cantrips || []), ...(c.spellcasting.spells_known || [])];
+    for (const spell of allSpells) {
+      const school = schoolAbbr[spell.school?.toLowerCase()] || 'evo';
+      items.push({
+        name: spell.name,
+        type: 'spell',
+        img: 'icons/svg/daze.svg',
+        system: {
+          description: { value: spell.description || '' },
+          level: spell.level,
+          school,
+          activation: { type: 'action', cost: 1, condition: '' },
+          duration: { value: spell.duration || '', units: '' },
+          range: { value: null, units: spell.range || '' },
+          components: {
+            vocal: spell.components?.includes('V') || false,
+            somatic: spell.components?.includes('S') || false,
+            material: spell.components?.includes('M') || false,
+          },
+          preparation: { mode: 'prepared', prepared: true },
+          save: { ability: '', dc: null, scaling: 'spell' },
+        },
+      });
+    }
+  }
+
+  // Items: class features & traits
+  for (const feat of (c.features_and_traits || [])) {
+    items.push({
+      name: feat.name,
+      type: 'feat',
+      img: 'icons/svg/upgrade.svg',
+      system: {
+        description: { value: feat.description || '' },
+        activation: { type: '', cost: null, condition: '' },
+        type: { value: 'class', subtype: '' },
+        requirements: feat.source || '',
+      },
+    });
+  }
+
+  // Items: equipment (non-weapon gear as loot)
+  for (const item of (c.equipment || [])) {
+    const isWeapon = (c.attacks || []).some(a => item.toLowerCase().includes(a.name.toLowerCase()));
+    if (!isWeapon) {
+      items.push({
+        name: item,
+        type: 'loot',
+        img: 'icons/svg/item-bag.svg',
+        system: { description: { value: '' }, quantity: 1, equipped: false, identified: true, rarity: 'common' },
+      });
+    }
+  }
+
+  const biographyHtml = `<p>${(c.backstory || '').replace(/\n/g, '</p><p>')}</p>` +
+    `<h2>Appearance</h2><p>${c.appearance || ''}</p>`;
+
+  const actor = {
+    name: c.name,
+    type: 'npc',
+    img: 'icons/svg/mystery-man.svg',
+    system: {
+      abilities,
+      attributes: {
+        ac: { flat: c.armor_class.total, calc: 'flat', formula: '' },
+        hp: { value: c.hit_points.maximum, min: 0, max: c.hit_points.maximum, temp: 0, tempmax: 0 },
+        init: { ability: 'dex', bonus: '' },
+        movement: { burrow: 0, climb: 0, fly: 0, swim: 0, walk: c.speed || 30, units: 'ft', hover: false },
+        senses: { darkvision: 0, blindsight: 0, tremorsense: 0, truesight: 0, units: 'ft', special: '' },
+        spellcasting: c.spellcasting ? abilityMap[Object.keys(abilityMap).find(k => abilityMap[k] === (c.spellcasting.ability || '').toLowerCase().substring(0,3)) || 'intelligence'] : '',
+        death: { success: 0, failure: 0 },
+        exhaustion: 0,
+        inspiration: false,
+      },
+      details: {
+        biography: { value: biographyHtml, public: '' },
+        alignment: c.alignment || '',
+        race: { value: c.race || '' },
+        background: { value: c.background || '' },
+        appearance: c.appearance || '',
+        trait: c.personality_traits || '',
+        ideal: c.ideals || '',
+        bond: c.bonds || '',
+        flaw: c.flaws || '',
+        cr: _levelToCR(c.level),
+        xp: { value: _crToXP(_levelToCR(c.level)) },
+      },
+      traits: {
+        size: 'med',
+        languages: {
+          value: (c.proficiencies?.languages || []).map(l => l.toLowerCase()),
+          custom: '',
+        },
+        di: { value: [], bypasses: [], custom: '' },
+        dr: { value: [], bypasses: [], custom: '' },
+        dv: { value: [], bypasses: [], custom: '' },
+        ci: { value: [], custom: '' },
+      },
+      skills,
+      spells,
+      bonuses: {
+        mwak: { attack: '', damage: '' },
+        rwak: { attack: '', damage: '' },
+        msak: { attack: '', damage: '' },
+        rsak: { attack: '', damage: '' },
+        abilities: { check: '', save: '', skill: '' },
+        spell: { dc: '' },
+      },
+      currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
+    },
+    items,
+    effects: [],
+    flags: { 'niswins-tavern': { generated: true, level: c.level, characterClass: c.character_class } },
+    prototypeToken: {
+      name: c.name,
+      displayName: 20,
+      actorLink: false,
+      disposition: 0,
+      displayBars: 20,
+      bar1: { attribute: 'attributes.hp' },
+    },
+  };
+
+  const blob = new Blob([JSON.stringify(actor, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${c.name.replace(/[^a-z0-9]/gi, '_')}_foundry.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function _levelToCR(level) {
+  const map = {1:0.25,2:0.5,3:1,4:1,5:2,6:2,7:3,8:3,9:4,10:4,11:5,12:5,13:6,14:6,15:7,16:7,17:8,18:8,19:9,20:10};
+  return map[level] || 1;
+}
+
+function _crToXP(cr) {
+  const map = {0:10,0.125:25,0.25:50,0.5:100,1:200,2:450,3:700,4:1100,5:1800,6:2300,7:2900,8:3900,9:5000,10:5900};
+  return map[cr] || 200;
+}
+
+// -----------------------------------------------------------------------
 // Rendering
 // -----------------------------------------------------------------------
 
