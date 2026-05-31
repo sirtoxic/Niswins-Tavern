@@ -46,10 +46,10 @@ function setBusy(btnId, spinnerId, textId, busy, label) {
 async function generateCharacter() {
   const concept = document.getElementById('concept').value.trim();
   const race = document.getElementById('race').value.trim();
-  const charClass = document.getElementById('charClass').value.trim();
+  const charClass = document.getElementById('charClass').value;
 
-  if (!concept || !race || !charClass) {
-    alert('Please fill in Concept, Race, and Class before generating.');
+  if (!concept || !race) {
+    alert('Please fill in Concept and Race before generating.');
     return;
   }
 
@@ -57,6 +57,7 @@ async function generateCharacter() {
   document.getElementById('characterSheet').classList.add('hidden');
   document.getElementById('placeholder').classList.remove('hidden');
   document.getElementById('saveSection').classList.add('hidden');
+  document.getElementById('tokenUsage').classList.add('hidden');
 
   try {
     const body = {
@@ -68,6 +69,7 @@ async function generateCharacter() {
       appearance: document.getElementById('appearance').value.trim(),
       background_detail: selectedDetail,
       additional_notes: document.getElementById('notes').value.trim(),
+      generic_npc: document.getElementById('genericNpcMode').checked,
     };
 
     const r = await fetch('/api/generate', {
@@ -81,9 +83,11 @@ async function generateCharacter() {
       throw new Error(err.detail || 'Generation failed');
     }
 
-    currentCharacter = await r.json();
+    const data = await r.json();
+    currentCharacter = data.character;
     renderSheet(currentCharacter);
     document.getElementById('saveSection').classList.remove('hidden');
+    _showTokenUsage(data.usage);
   } catch (e) {
     alert(`Error: ${e.message}`);
   } finally {
@@ -711,6 +715,26 @@ function renderSpellList(title, spells) {
     wrap.appendChild(g);
   }
   return wrap;
+}
+
+// -----------------------------------------------------------------------
+// Token usage display
+// -----------------------------------------------------------------------
+
+function _showTokenUsage(usage) {
+  const el = document.getElementById('tokenUsage');
+  if (!el || !usage) return;
+  const costStr = usage.cost_usd < 0.001
+    ? `< $0.001`
+    : `$${usage.cost_usd.toFixed(4)}`;
+  el.innerHTML = `
+    <span title="Input tokens">${usage.input_tokens.toLocaleString()} in</span>
+    <span class="text-gray-600">/</span>
+    <span title="Output tokens">${usage.output_tokens.toLocaleString()} out</span>
+    <span class="text-gray-600">·</span>
+    <span title="Estimated cost (${usage.model})" class="text-gold">${costStr}</span>
+  `;
+  el.classList.remove('hidden');
 }
 
 // Init

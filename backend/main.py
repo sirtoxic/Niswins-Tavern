@@ -35,11 +35,12 @@ async def get_config():
 
 
 @app.post("/api/generate")
-async def api_generate(req: GenerateRequest) -> Character:
+async def api_generate(req: GenerateRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
     try:
-        return await generate_character(req)
+        character, usage = await generate_character(req)
+        return {"character": character, "usage": usage}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

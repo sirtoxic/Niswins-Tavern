@@ -1,7 +1,39 @@
 import json
 import os
+import httpx
 import anthropic
 from models import Character, GenerateRequest
+
+_LITELLM_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+_pricing_cache: dict = {}
+
+# Known fallback in case the model isn't in the LiteLLM dataset yet
+_FALLBACK_INPUT_PER_TOKEN = 0.000003   # $3/MTok
+_FALLBACK_OUTPUT_PER_TOKEN = 0.000015  # $15/MTok
+
+
+async def _get_model_pricing(model: str) -> tuple[float, float]:
+    """Return (input_cost_per_token, output_cost_per_token) for the given model."""
+    global _pricing_cache
+    if not _pricing_cache:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(_LITELLM_URL)
+                if r.status_code == 200:
+                    _pricing_cache = r.json()
+        except Exception:
+            pass
+
+    entry = (
+        _pricing_cache.get(model)
+        or _pricing_cache.get(f"anthropic/{model}")
+    )
+    if entry:
+        return (
+            entry.get("input_cost_per_token", _FALLBACK_INPUT_PER_TOKEN),
+            entry.get("output_cost_per_token", _FALLBACK_OUTPUT_PER_TOKEN),
+        )
+    return _FALLBACK_INPUT_PER_TOKEN, _FALLBACK_OUTPUT_PER_TOKEN
 
 ABILITY_NAMES = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
 ALL_SKILLS = [
@@ -28,13 +60,27 @@ Always separate base ability scores from racial bonuses so both are visible.
 Always show the formula/breakdown for every calculated stat.
 Return ONLY valid JSON matching the schema — no prose, no markdown fences."""
 
+GENERIC_NPC_SYSTEM_ADDENDUM = """
+GENERIC NPC MODE is active. Simplify the output as follows:
+- backstory: exactly 2 sentences covering who they are and what they want
+- personality_traits, ideals, bonds, flaws: one short sentence each
+- features_and_traits: include at most 3 entries — only the most essential class/race features
+- attacks: include exactly 1 attack at level 1; add 1 additional attack for every 4 levels (so 2 at level 5, 3 at level 9, etc.)
+- spellcasting (if applicable): include spellcasting stats and spell slots, but spells_known should contain at most 1 spell per 2 levels (rounded up), plus up to 2 cantrips. Do not list more spells than this.
+- equipment: list only 3-5 essential items
+All 5e math rules still apply exactly. The stat block must still be correct and complete."""
+
+
 def build_user_prompt(req: GenerateRequest) -> str:
-    backstory_guidance = {
-        "short": "1-2 sentences of backstory covering origin and motivation",
-        "medium": "2-3 paragraphs covering origin, key life events, and what drives them",
-        "long": "4-6 paragraphs with rich detail: origin, formative experiences, relationships, traumas, goals, and secrets",
-    }
-    backstory_instruction = backstory_guidance.get(req.background_detail, backstory_guidance["medium"])
+    if req.generic_npc:
+        backstory_instruction = "exactly 2 sentences covering their origin and motivation (GENERIC NPC MODE)"
+    else:
+        backstory_guidance = {
+            "short": "1-2 sentences of backstory covering origin and motivation",
+            "medium": "2-3 paragraphs covering origin, key life events, and what drives them",
+            "long": "4-6 paragraphs with rich detail: origin, formative experiences, relationships, traumas, goals, and secrets",
+        }
+        backstory_instruction = backstory_guidance.get(req.background_detail, backstory_guidance["medium"])
 
     appearance_instruction = (
         f'Use this appearance description: "{req.appearance}"' if req.appearance.strip()
@@ -42,6 +88,7 @@ def build_user_prompt(req: GenerateRequest) -> str:
     )
 
     notes_section = f"\nAdditional notes: {req.additional_notes}" if req.additional_notes.strip() else ""
+    generic_note = "\n\nNOTE: GENERIC NPC MODE is active — follow the simplified output rules from the system prompt." if req.generic_npc else ""
 
     return f"""Generate a complete D&D 5e character sheet for:
 - Concept: {req.concept}
@@ -50,7 +97,7 @@ def build_user_prompt(req: GenerateRequest) -> str:
 - Level: {req.level}
 - Alignment: {req.alignment}
 - Appearance: {appearance_instruction}
-- Backstory detail: {backstory_instruction}{notes_section}
+- Backstory detail: {backstory_instruction}{notes_section}{generic_note}
 
 Return a JSON object matching this exact schema. Every field is required unless marked optional.
 
@@ -187,13 +234,18 @@ For spellcasting classes, replace null with:
 }}"""
 
 
-async def generate_character(req: GenerateRequest) -> Character:
+MODEL = "claude-sonnet-4-6"
+
+
+async def generate_character(req: GenerateRequest) -> tuple:
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
+    system = SYSTEM_PROMPT + (GENERIC_NPC_SYSTEM_ADDENDUM if req.generic_npc else "")
+
     message = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=MODEL,
         max_tokens=16000,
-        system=SYSTEM_PROMPT,
+        system=system,
         messages=[{"role": "user", "content": build_user_prompt(req)}],
     )
 
@@ -212,4 +264,17 @@ async def generate_character(req: GenerateRequest) -> Character:
             f"Try using 'Short' backstory detail to reduce output size. Error: {e}"
         )
 
-    return Character(**data)
+    input_tokens = message.usage.input_tokens
+    output_tokens = message.usage.output_tokens
+    input_cost, output_cost = await _get_model_pricing(MODEL)
+    cost_usd = input_tokens * input_cost + output_tokens * output_cost
+
+    usage = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+        "cost_usd": round(cost_usd, 6),
+        "model": MODEL,
+    }
+
+    return Character(**data), usage

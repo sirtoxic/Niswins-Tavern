@@ -207,6 +207,7 @@ class GenerateRequest(BaseModel):
     appearance: str
     background_detail: str  # "short", "medium", "long"
     additional_notes: str = ""
+    generic_npc: bool = False
 
 
 class SaveRequest(BaseModel):

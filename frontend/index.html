@@ -120,7 +120,21 @@
           </div>
           <div>
             <label class="text-xs text-gray-400 block mb-1">Class</label>
-            <input id="charClass" type="text" placeholder="e.g. Fighter" class="input-field text-sm" />
+            <select id="charClass" class="input-field text-sm">
+              <option value="Artificer">Artificer</option>
+              <option value="Barbarian">Barbarian</option>
+              <option value="Bard">Bard</option>
+              <option value="Cleric">Cleric</option>
+              <option value="Druid">Druid</option>
+              <option value="Fighter" selected>Fighter</option>
+              <option value="Monk">Monk</option>
+              <option value="Paladin">Paladin</option>
+              <option value="Ranger">Ranger</option>
+              <option value="Rogue">Rogue</option>
+              <option value="Sorcerer">Sorcerer</option>
+              <option value="Warlock">Warlock</option>
+              <option value="Wizard">Wizard</option>
+            </select>
           </div>
         </div>
 
@@ -166,6 +180,14 @@
           <textarea id="notes" rows="2" placeholder="Has a missing left hand, replaced with a prosthetic..." class="input-field resize-none text-sm"></textarea>
         </div>
 
+        <div class="flex items-start gap-2 pt-1">
+          <input type="checkbox" id="genericNpcMode" class="mt-0.5 accent-gold cursor-pointer" />
+          <div>
+            <label for="genericNpcMode" class="text-xs text-parchment cursor-pointer font-semibold">Generic NPC Mode</label>
+            <p class="text-xs text-gray-500 leading-tight mt-0.5">Simplified sheet — short backstory, fewer features, minimal spells. Good for background characters.</p>
+          </div>
+        </div>
+
         <button id="generateBtn" onclick="generateCharacter()" class="btn-primary w-full flex items-center justify-center gap-2">
           <svg id="generateSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -173,6 +195,7 @@
           </svg>
           <span id="generateBtnText">Generate Character</span>
         </button>
+        <div id="tokenUsage" class="hidden flex items-center justify-center gap-1.5 text-xs text-gray-500 pt-1"></div>
       </div>
 
       <!-- Save / Export section (shown after generation) -->
