@@ -213,3 +213,4 @@ class GenerateRequest(BaseModel):
 class SaveRequest(BaseModel):
     character: Character
     folder: str = "npcs"
+    history_id: Optional[str] = None

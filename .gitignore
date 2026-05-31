@@ -17,6 +17,9 @@ build/
 # macOS
 .DS_Store
 
+# Generation history (local data)
+history/
+
 # Claude Code
 .claude/
 

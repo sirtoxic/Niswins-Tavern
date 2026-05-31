@@ -1,5 +1,7 @@
 import os
+import uuid
 import yaml
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -9,6 +11,7 @@ from dotenv import load_dotenv
 from models import GenerateRequest, SaveRequest, Character
 from character_generator import generate_character
 from docmost_client import DocmostClient
+import history_store
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
@@ -19,6 +22,11 @@ FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
 
 
+def _load_config() -> dict:
+    with open(CONFIG_PATH) as f:
+        return yaml.safe_load(f)
+
+
 @app.get("/")
 async def serve_index():
     return FileResponse(FRONTEND_DIR / "index.html")
@@ -26,8 +34,7 @@ async def serve_index():
 
 @app.get("/api/config")
 async def get_config():
-    with open(CONFIG_PATH) as f:
-        cfg = yaml.safe_load(f)
+    cfg = _load_config()
     return {
         "folders": cfg["docmost"]["folders"],
         "docmost_url": cfg["docmost"]["url"],
@@ -40,7 +47,25 @@ async def api_generate(req: GenerateRequest):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
     try:
         character, usage = await generate_character(req)
-        return {"character": character, "usage": usage}
+
+        entry_id = str(uuid.uuid4())
+        entry = {
+            "id": entry_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": "Generic NPC" if req.generic_npc else "Character",
+            "name": character.name,
+            "race": character.race,
+            "character_class": character.character_class,
+            "level": character.level,
+            "alignment": character.alignment,
+            "generic_npc": req.generic_npc,
+            "docmost_page_id": None,
+            "docmost_url": None,
+            "character": character.model_dump(),
+        }
+        history_store.save_entry(entry)
+
+        return {"character": character, "usage": usage, "history_id": entry_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -49,9 +74,38 @@ async def api_generate(req: GenerateRequest):
 async def api_save(req: SaveRequest):
     try:
         page_id = await docmost.save_character(req.character, req.folder)
-        return {"success": True, "page_id": page_id}
+
+        cfg = _load_config()
+        base = cfg["docmost"]["url"].rstrip("/")
+        if base.endswith("/api"):
+            base = base[:-4]
+        docmost_url = f"{base}/page/{page_id}"
+
+        if req.history_id:
+            try:
+                history_store.patch_entry(req.history_id, {
+                    "docmost_page_id": page_id,
+                    "docmost_url": docmost_url,
+                })
+            except Exception:
+                pass  # Don't fail the save if history update fails
+
+        return {"success": True, "page_id": page_id, "docmost_url": docmost_url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/history")
+async def api_history_list():
+    return history_store.list_entries()
+
+
+@app.get("/api/history/{entry_id}")
+async def api_history_entry(entry_id: str):
+    try:
+        return history_store.get_entry(entry_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="History entry not found")
 
 
 app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")

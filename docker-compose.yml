@@ -6,4 +6,5 @@ services:
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./.env:/app/.env
+      - ./history:/app/history
     restart: unless-stopped

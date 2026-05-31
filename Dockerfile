@@ -11,7 +11,7 @@ COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 COPY config.yaml .
 
-RUN chown -R tavern:tavern /app
+RUN mkdir -p /app/history && chown -R tavern:tavern /app
 USER tavern
 
 EXPOSE 8000

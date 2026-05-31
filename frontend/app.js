@@ -1,34 +1,165 @@
 'use strict';
 
 let currentCharacter = null;
+let currentHistoryId = null;
 let selectedDetail = 'medium';
+let historyEntries = [];
+let selectedHistoryEntryId = null;
 
-// Load config on startup to populate folder dropdown
+// -----------------------------------------------------------------------
+// Config / startup
+// -----------------------------------------------------------------------
+
 async function loadConfig() {
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
-    const sel = document.getElementById('saveFolder');
-    sel.innerHTML = '';
-    for (const [key, label] of Object.entries(cfg.folders)) {
-      const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = label;
-      if (key === 'npcs') opt.selected = true;
-      sel.appendChild(opt);
+    for (const selId of ['saveFolder', 'historySaveFolder']) {
+      const sel = document.getElementById(selId);
+      if (!sel) continue;
+      sel.innerHTML = '';
+      for (const [key, label] of Object.entries(cfg.folders)) {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = label;
+        if (key === 'npcs') opt.selected = true;
+        sel.appendChild(opt);
+      }
     }
   } catch {}
 }
 
 function setDetail(level) {
   selectedDetail = level;
-  ['short','medium','long'].forEach(d => {
+  ['short', 'medium', 'long'].forEach(d => {
     const btn = document.getElementById(`detail-${d}`);
     btn.className = d === level
       ? 'flex-1 btn-primary text-xs py-2'
       : 'flex-1 btn-secondary text-xs py-2';
   });
 }
+
+// -----------------------------------------------------------------------
+// View switching
+// -----------------------------------------------------------------------
+
+function switchView(view) {
+  document.getElementById('viewForge').classList.toggle('hidden', view !== 'forge');
+  document.getElementById('viewHistory').classList.toggle('hidden', view !== 'history');
+  document.getElementById('navForge').classList.toggle('nav-active', view === 'forge');
+  document.getElementById('navHistory').classList.toggle('nav-active', view === 'history');
+  if (view === 'history' && historyEntries.length === 0) {
+    loadHistoryList();
+  }
+}
+
+// -----------------------------------------------------------------------
+// History
+// -----------------------------------------------------------------------
+
+async function loadHistoryList() {
+  document.getElementById('historyEntriesList').innerHTML =
+    '<p class="text-xs text-gray-600 text-center pt-8">Loading…</p>';
+  try {
+    const r = await fetch('/api/history');
+    historyEntries = await r.json();
+    renderHistoryList();
+  } catch (e) {
+    document.getElementById('historyEntriesList').innerHTML =
+      `<p class="text-xs text-red-400 text-center pt-8">Failed to load history</p>`;
+  }
+}
+
+function renderHistoryList() {
+  const container = document.getElementById('historyEntriesList');
+  if (historyEntries.length === 0) {
+    container.innerHTML =
+      '<p class="text-xs text-gray-600 text-center pt-8">No generations yet.<br>Head to the Forge to create your first character.</p>';
+    return;
+  }
+  container.innerHTML = '';
+  for (const entry of historyEntries) {
+    const card = document.createElement('div');
+    card.className = 'history-card' + (entry.id === selectedHistoryEntryId ? ' selected' : '');
+    card.onclick = () => openHistoryEntry(entry.id);
+    card.innerHTML = `
+      <div class="flex items-start justify-between gap-1 mb-0.5">
+        <span class="text-sm font-bold text-parchment leading-tight">${entry.name}</span>
+        <span class="source-tag flex-shrink-0" style="color:${_typeColor(entry.type)}">${entry.type}</span>
+      </div>
+      <div class="text-xs text-gray-500">${entry.character_class} · ${entry.race} · Lvl ${entry.level}</div>
+      <div class="text-xs text-gray-600 mt-0.5">${_formatTimestamp(entry.timestamp)}</div>
+      ${entry.docmost_page_id ? '<div class="text-xs text-green-600 mt-0.5">✓ Saved to Docmost</div>' : ''}
+    `;
+    container.appendChild(card);
+  }
+}
+
+async function openHistoryEntry(entryId) {
+  selectedHistoryEntryId = entryId;
+  renderHistoryList();
+
+  document.getElementById('historyDetail').classList.add('hidden');
+  document.getElementById('historyPlaceholder').classList.remove('hidden');
+  document.getElementById('historyPlaceholder').querySelector('p').textContent = 'Loading…';
+
+  try {
+    const r = await fetch(`/api/history/${entryId}`);
+    if (!r.ok) throw new Error('Entry not found');
+    const entry = await r.json();
+
+    currentCharacter = entry.character;
+    currentHistoryId = entry.id;
+
+    // Meta line
+    document.getElementById('historyEntryMeta').innerHTML =
+      `<span class="font-bold text-parchment">${entry.name}</span>` +
+      `<span class="ml-2">${entry.character_class} · ${entry.race} · Level ${entry.level} · ${entry.alignment}</span>` +
+      `<span class="ml-2 text-gray-600">Generated ${_formatTimestamp(entry.timestamp)}</span>`;
+
+    // Docmost link
+    const link = document.getElementById('historyDocmostLink');
+    if (entry.docmost_url) {
+      link.href = entry.docmost_url;
+      link.classList.remove('hidden');
+    } else {
+      link.classList.add('hidden');
+    }
+
+    document.getElementById('historySaveResult').classList.add('hidden');
+    document.getElementById('historyPlaceholder').classList.add('hidden');
+    document.getElementById('historyDetail').classList.remove('hidden');
+
+    const historySheet = document.getElementById('historySheet');
+    historySheet.innerHTML = '';
+    renderSheet(entry.character, historySheet);
+  } catch (e) {
+    document.getElementById('historyPlaceholder').querySelector('p').textContent = `Error: ${e.message}`;
+  }
+}
+
+function _typeColor(type) {
+  const map = {
+    'Character': '#c9a227',
+    'Generic NPC': '#8a7560',
+    'Beast': '#4a7c59',
+    'Location': '#4a6e9e',
+    'Encounter': '#8b1a1a',
+  };
+  return map[type] || '#8a7560';
+}
+
+function _formatTimestamp(ts) {
+  try {
+    return new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return ts;
+  }
+}
+
+// -----------------------------------------------------------------------
+// Forge: generate
+// -----------------------------------------------------------------------
 
 function sign(n) {
   return n >= 0 ? `+${n}` : `${n}`;
@@ -85,6 +216,7 @@ async function generateCharacter() {
 
     const data = await r.json();
     currentCharacter = data.character;
+    currentHistoryId = data.history_id ?? null;
     renderSheet(currentCharacter);
     document.getElementById('saveSection').classList.remove('hidden');
     _showTokenUsage(data.usage);
@@ -94,6 +226,10 @@ async function generateCharacter() {
     setBusy('generateBtn', 'generateSpinner', 'generateBtnText', false, 'Generate Character');
   }
 }
+
+// -----------------------------------------------------------------------
+// Save to Docmost
+// -----------------------------------------------------------------------
 
 async function saveCharacter() {
   if (!currentCharacter) return;
@@ -106,10 +242,18 @@ async function saveCharacter() {
     const r = await fetch('/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ character: currentCharacter, folder }),
+      body: JSON.stringify({ character: currentCharacter, folder, history_id: currentHistoryId }),
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || 'Save failed');
+
+    // Update the in-memory history entry so the badge appears if user switches to history
+    const entry = historyEntries.find(e => e.id === currentHistoryId);
+    if (entry) {
+      entry.docmost_page_id = data.page_id;
+      entry.docmost_url = data.docmost_url;
+    }
+
     resultEl.textContent = `✓ Saved to Docmost (page ${data.page_id})`;
     resultEl.className = 'text-xs text-center py-1 text-green-400';
     resultEl.classList.remove('hidden');
@@ -119,6 +263,49 @@ async function saveCharacter() {
     resultEl.classList.remove('hidden');
   } finally {
     setBusy('saveBtn', 'saveSpinner', 'saveBtnText', false, 'Save to Docmost');
+  }
+}
+
+async function saveFromHistory() {
+  if (!currentCharacter) return;
+  const folder = document.getElementById('historySaveFolder').value;
+  setBusy('historySaveBtn', 'historySaveSpinner', 'historySaveBtnText', true, 'Saving…');
+  const resultEl = document.getElementById('historySaveResult');
+  resultEl.classList.add('hidden');
+
+  try {
+    const r = await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ character: currentCharacter, folder, history_id: currentHistoryId }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Save failed');
+
+    // Update in-memory entry and re-render list badge
+    const entry = historyEntries.find(e => e.id === currentHistoryId);
+    if (entry) {
+      entry.docmost_page_id = data.page_id;
+      entry.docmost_url = data.docmost_url;
+      renderHistoryList();
+    }
+
+    // Show the "View in Docmost" link
+    if (data.docmost_url) {
+      const link = document.getElementById('historyDocmostLink');
+      link.href = data.docmost_url;
+      link.classList.remove('hidden');
+    }
+
+    resultEl.textContent = `✓ Saved (page ${data.page_id})`;
+    resultEl.className = 'text-xs text-green-400';
+    resultEl.classList.remove('hidden');
+  } catch (e) {
+    resultEl.textContent = `✗ ${e.message}`;
+    resultEl.className = 'text-xs text-red-400';
+    resultEl.classList.remove('hidden');
+  } finally {
+    setBusy('historySaveBtn', 'historySaveSpinner', 'historySaveBtnText', false, 'Save to Docmost');
   }
 }
 
@@ -152,7 +339,6 @@ function exportToFoundryJSON() {
     stealth: { abbr: 'ste', ability: 'dex' }, survival: { abbr: 'sur', ability: 'wis' },
   };
 
-  // Abilities
   const abilities = {};
   for (const [full, abbr] of Object.entries(abilityMap)) {
     const a = c.ability_scores[full];
@@ -164,7 +350,6 @@ function exportToFoundryJSON() {
     };
   }
 
-  // Skills (0 = none, 1 = proficient, 2 = expertise)
   const skills = {};
   for (const [full, { abbr, ability }] of Object.entries(skillMap)) {
     const sk = c.skills[full];
@@ -175,7 +360,6 @@ function exportToFoundryJSON() {
     };
   }
 
-  // Spell slots
   const spells = {};
   for (let i = 1; i <= 9; i++) {
     const count = c.spellcasting ? (c.spellcasting.spell_slots[`level_${i}`] || 0) : 0;
@@ -183,7 +367,6 @@ function exportToFoundryJSON() {
   }
   spells.spell0 = { value: 0, override: null };
 
-  // Items: weapons
   const items = [];
   for (const atk of (c.attacks || [])) {
     const dmgMatch = atk.damage_dice.match(/(\d+)d(\d+)/);
@@ -222,7 +405,6 @@ function exportToFoundryJSON() {
     });
   }
 
-  // Items: spells
   if (c.spellcasting) {
     const schoolAbbr = { abjuration:'abj', conjuration:'con', divination:'div', enchantment:'enc', evocation:'evo', illusion:'ill', necromancy:'nec', transmutation:'trs' };
     const allSpells = [...(c.spellcasting.cantrips || []), ...(c.spellcasting.spells_known || [])];
@@ -251,7 +433,6 @@ function exportToFoundryJSON() {
     }
   }
 
-  // Items: class features & traits
   for (const feat of (c.features_and_traits || [])) {
     items.push({
       name: feat.name,
@@ -266,7 +447,6 @@ function exportToFoundryJSON() {
     });
   }
 
-  // Items: equipment (non-weapon gear as loot)
   for (const item of (c.equipment || [])) {
     const isWeapon = (c.attacks || []).some(a => item.toLowerCase().includes(a.name.toLowerCase()));
     if (!isWeapon) {
@@ -368,6 +548,26 @@ function _crToXP(cr) {
 }
 
 // -----------------------------------------------------------------------
+// Token usage display
+// -----------------------------------------------------------------------
+
+function _showTokenUsage(usage) {
+  const el = document.getElementById('tokenUsage');
+  if (!el || !usage) return;
+  const costStr = usage.cost_usd < 0.001
+    ? `< $0.001`
+    : `$${usage.cost_usd.toFixed(4)}`;
+  el.innerHTML = `
+    <span title="Input tokens">${usage.input_tokens.toLocaleString()} in</span>
+    <span class="text-gray-600">/</span>
+    <span title="Output tokens">${usage.output_tokens.toLocaleString()} out</span>
+    <span class="text-gray-600">·</span>
+    <span title="Estimated cost (${usage.model})" class="text-gold">${costStr}</span>
+  `;
+  el.classList.remove('hidden');
+}
+
+// -----------------------------------------------------------------------
 // Rendering
 // -----------------------------------------------------------------------
 
@@ -382,11 +582,14 @@ function sectionHeader(title) {
   return el('div', 'section-header mt-4', title);
 }
 
-function renderSheet(c) {
-  const sheet = document.getElementById('characterSheet');
+function renderSheet(c, containerEl) {
+  const sheet = containerEl || document.getElementById('characterSheet');
   sheet.innerHTML = '';
-  document.getElementById('placeholder').classList.add('hidden');
-  sheet.classList.remove('hidden');
+
+  if (!containerEl) {
+    document.getElementById('placeholder').classList.add('hidden');
+    document.getElementById('characterSheet').classList.remove('hidden');
+  }
 
   // -- Name & identity bar --
   const header = el('div', 'panel');
@@ -542,7 +745,6 @@ function renderSheet(c) {
     sheet.appendChild(sectionHeader('Spellcasting'));
     const spPanel = el('div', 'panel space-y-3');
 
-    // Header row
     spPanel.innerHTML = `
       <div class="grid grid-cols-3 gap-3 text-center text-xs">
         <div class="stat-box">
@@ -563,7 +765,6 @@ function renderSheet(c) {
       </div>
     `;
 
-    // Spell slots
     const slots = sp.spell_slots;
     const slotEntries = [1,2,3,4,5,6,7,8,9]
       .map(i => [i, slots[`level_${i}`]])
@@ -579,7 +780,6 @@ function renderSheet(c) {
       spPanel.appendChild(slotDiv);
     }
 
-    // Cantrips
     if (sp.cantrips && sp.cantrips.length) {
       spPanel.appendChild(renderSpellList('Cantrips', sp.cantrips));
     }
@@ -715,26 +915,6 @@ function renderSpellList(title, spells) {
     wrap.appendChild(g);
   }
   return wrap;
-}
-
-// -----------------------------------------------------------------------
-// Token usage display
-// -----------------------------------------------------------------------
-
-function _showTokenUsage(usage) {
-  const el = document.getElementById('tokenUsage');
-  if (!el || !usage) return;
-  const costStr = usage.cost_usd < 0.001
-    ? `< $0.001`
-    : `$${usage.cost_usd.toFixed(4)}`;
-  el.innerHTML = `
-    <span title="Input tokens">${usage.input_tokens.toLocaleString()} in</span>
-    <span class="text-gray-600">/</span>
-    <span title="Output tokens">${usage.output_tokens.toLocaleString()} out</span>
-    <span class="text-gray-600">·</span>
-    <span title="Estimated cost (${usage.model})" class="text-gold">${costStr}</span>
-  `;
-  el.classList.remove('hidden');
 }
 
 // Init
