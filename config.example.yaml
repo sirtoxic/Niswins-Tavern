@@ -1,0 +1,12 @@
+docmost:
+  url: "https://your-docmost-instance.example.com/api"
+  username: "your-docmost-email@example.com"
+  password: "your-docmost-password"
+  folders:
+    npcs: "NPCs"
+    bestiary: "Bestiary"
+    locations: "Locations"
+    encounters: "Encounters"
+
+claude:
+  model: "claude-sonnet-4-6"

@@ -1,0 +1,9 @@
+services:
+  tavern:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./.env:/app/.env
+    restart: unless-stopped
