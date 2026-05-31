@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,18 @@ _META_KEYS = {
 
 def _ensure_dir() -> None:
     HISTORY_DIR.mkdir(exist_ok=True)
+
+
+def make_entry_id(ts: datetime, name: str) -> str:
+    """Build a human-readable filename stem: 20260531_143022_Theron_Blackwood."""
+    safe = re.sub(r'[^\w\s-]', '', name).strip()
+    safe = re.sub(r'\s+', '_', safe)[:48]
+    base = f"{ts.strftime('%Y%m%d_%H%M%S')}_{safe}" if safe else ts.strftime('%Y%m%d_%H%M%S')
+    # Append a short suffix only if the file already exists (same-second collision)
+    _ensure_dir()
+    if (HISTORY_DIR / f"{base}.json").exists():
+        base = f"{base}_{uuid.uuid4().hex[:4]}"
+    return base
 
 
 def save_entry(entry: dict) -> dict:

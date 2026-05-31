@@ -1,5 +1,4 @@
 import os
-import uuid
 import yaml
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,10 +47,11 @@ async def api_generate(req: GenerateRequest):
     try:
         character, usage = await generate_character(req)
 
-        entry_id = str(uuid.uuid4())
+        ts = datetime.now(timezone.utc)
+        entry_id = history_store.make_entry_id(ts, character.name)
         entry = {
             "id": entry_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": ts.isoformat(),
             "type": "Generic NPC" if req.generic_npc else "Character",
             "name": character.name,
             "race": character.race,
