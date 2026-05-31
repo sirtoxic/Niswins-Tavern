@@ -1,3 +1,5 @@
+This is a little side project that i generated with AI dont expect updates or for it to be fully working. I only know enough code to be dangerous. One day this may be somthing cool.
+
 # Niswins Tavern — Character Forge
 
 A D&D 5e NPC and character generator powered by the Claude API. Fill out a short form, get a complete stat block with full 5e math breakdowns, then save directly to [Docmost](https://docmost.com) or export as PDF / Foundry VTT JSON.
