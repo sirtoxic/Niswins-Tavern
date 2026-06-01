@@ -927,7 +927,7 @@ function renderSheet(c, containerEl) {
   sheet.appendChild(coreGrid);
 
   // -- Ability scores --
-  sheet.appendChild(sectionHeader('Ability Scores'));
+  sheet.appendChild(sectionHeader('<i class="fa-solid fa-brain mr-1.5"></i>Ability Scores'));
   const abilityGrid = el('div', 'grid grid-cols-3 md:grid-cols-6 gap-2');
   const abilities = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
   const abbrMap = {strength:'STR',dexterity:'DEX',constitution:'CON',intelligence:'INT',wisdom:'WIS',charisma:'CHA'};
@@ -950,12 +950,12 @@ function renderSheet(c, containerEl) {
   sheet.appendChild(abilityGrid);
 
   // -- Saving throws + Skills side by side --
-  sheet.appendChild(sectionHeader('Saving Throws & Skills'));
+  sheet.appendChild(sectionHeader('<i class="fa-solid fa-chart-bar mr-1.5"></i>Saving Throws & Skills'));
   const twoCol = el('div', 'grid grid-cols-1 md:grid-cols-2 gap-4');
 
   // Saving throws
   const savesPanel = el('div', 'panel');
-  savesPanel.innerHTML = '<div class="text-xs text-gold uppercase font-bold mb-2">Saving Throws</div>';
+  savesPanel.innerHTML = '<div class="text-xs text-gold uppercase font-bold mb-2"><i class="fa-solid fa-shield-halved mr-1"></i>Saving Throws</div>';
   const saveNames = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
   for (const name of saveNames) {
     const st = c.saving_throws[name];
@@ -976,7 +976,7 @@ function renderSheet(c, containerEl) {
 
   // Skills
   const skillsPanel = el('div', 'panel');
-  skillsPanel.innerHTML = '<div class="text-xs text-gold uppercase font-bold mb-2">Skills <span class="text-gray-600 font-normal normal-case">(● prof, ●● expertise)</span></div>';
+  skillsPanel.innerHTML = '<div class="text-xs text-gold uppercase font-bold mb-2"><i class="fa-solid fa-star mr-1"></i>Skills <span class="text-gray-600 font-normal normal-case">(● prof, ●● expertise)</span></div>';
   const skillList = [
     ['acrobatics','Acrobatics'],['animal_handling','Animal Handling'],['arcana','Arcana'],
     ['athletics','Athletics'],['deception','Deception'],['history','History'],
@@ -1008,16 +1008,16 @@ function renderSheet(c, containerEl) {
 
   // -- Attacks --
   if (c.attacks && c.attacks.length) {
-    sheet.appendChild(sectionHeader('Attacks'));
+    sheet.appendChild(sectionHeader('<i class="fa-solid fa-khanda mr-1.5"></i>Attacks'));
     const attacksPanel = el('div', 'panel overflow-x-auto');
     const table = el('table', 'w-full text-xs border-collapse');
     table.innerHTML = `
       <thead>
         <tr class="text-gold text-left">
-          <th class="pb-1 pr-3">Weapon</th>
+          <th class="pb-1 pr-3"><i class="fa-solid fa-khanda mr-1"></i>Weapon</th>
           <th class="pb-1 pr-3">To Hit</th>
           <th class="pb-1 pr-3">Breakdown</th>
-          <th class="pb-1 pr-3">Damage</th>
+          <th class="pb-1 pr-3"><i class="fa-solid fa-droplet mr-1 text-red-500"></i>Damage</th>
           <th class="pb-1 pr-3">Type</th>
           <th class="pb-1 pr-3">Range</th>
           <th class="pb-1">Notes</th>
@@ -1060,7 +1060,7 @@ function renderSheet(c, containerEl) {
           <div class="breakdown-text">${sign(sp.ability_modifier)}</div>
         </div>
         <div class="stat-box">
-          <div class="text-gold font-bold">Spell Attack</div>
+          <div class="text-gold font-bold"><i class="fa-solid fa-khanda mr-1"></i>Spell Attack</div>
           <div class="text-lg font-bold">${sign(sp.spell_attack_bonus)}</div>
           <div class="breakdown-text">${sp.spell_attack_breakdown}</div>
         </div>
