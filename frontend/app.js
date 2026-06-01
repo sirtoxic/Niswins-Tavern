@@ -10,7 +10,6 @@ let currentItem = null;
 let currentItemHistoryId = null;
 let selectedHistoryEntryType = null;  // 'Character', 'Generic NPC', 'Item', etc.
 
-let historySearchQuery = '';
 let historyActiveTag = null;
 
 const RARITY_COLORS = {
@@ -104,7 +103,6 @@ async function loadHistoryList() {
 }
 
 function filterHistory() {
-  historySearchQuery = (document.getElementById('historySearch')?.value || '').toLowerCase().trim();
   renderHistoryList();
 }
 
@@ -154,13 +152,15 @@ function renderHistoryList() {
     return;
   }
 
+  const searchQuery = (document.getElementById('historySearch')?.value || '').toLowerCase().trim();
+
   let filtered = historyEntries;
   if (historyActiveTag) {
     filtered = filtered.filter(e => e.type === historyActiveTag);
   }
-  if (historySearchQuery) {
+  if (searchQuery) {
     filtered = filtered.filter(e => {
-      const name = e.name.toLowerCase();
+      const name = (e.name || '').toLowerCase();
       const extra = [
         e.type, e.race, e.character_class, e.alignment,
         e.item_type, e.rarity,
@@ -168,7 +168,7 @@ function renderHistoryList() {
         e.target_level_min != null ? String(e.target_level_min) : null,
         e.target_level_max != null ? String(e.target_level_max) : null,
       ].filter(Boolean).join(' ').toLowerCase();
-      return name.includes(historySearchQuery) || extra.includes(historySearchQuery);
+      return name.includes(searchQuery) || extra.includes(searchQuery);
     });
   }
 
