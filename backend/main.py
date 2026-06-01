@@ -175,10 +175,22 @@ async def api_generate(req: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _existing_page_id(history_id: str | None) -> str | None:
+    """Return the stored docmost_page_id for a history entry, or None."""
+    if not history_id:
+        return None
+    try:
+        return history_store.get_entry(history_id).get("docmost_page_id")
+    except Exception:
+        return None
+
+
 @app.post("/api/save")
 async def api_save(req: SaveRequest):
     try:
-        page_id, docmost_url = await docmost.save_character(req.character, req.folder)
+        page_id, docmost_url = await docmost.save_character(
+            req.character, req.folder, existing_page_id=_existing_page_id(req.history_id)
+        )
 
         if req.history_id:
             try:
@@ -228,7 +240,9 @@ async def api_generate_item(req: GenerateItemRequest):
 @app.post("/api/save-item")
 async def api_save_item(req: SaveItemRequest):
     try:
-        page_id, docmost_url = await docmost.save_item(req.item)
+        page_id, docmost_url = await docmost.save_item(
+            req.item, existing_page_id=_existing_page_id(req.history_id)
+        )
 
         if req.history_id:
             try:
@@ -277,7 +291,9 @@ async def api_generate_shop(req: GenerateShopRequest):
 @app.post("/api/save-shop")
 async def api_save_shop(req: SaveShopRequest):
     try:
-        page_id, docmost_url = await docmost.save_shop(req.shop)
+        page_id, docmost_url = await docmost.save_shop(
+            req.shop, existing_page_id=_existing_page_id(req.history_id)
+        )
 
         if req.history_id:
             try:

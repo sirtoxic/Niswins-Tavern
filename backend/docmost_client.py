@@ -181,6 +181,24 @@ class DocmostClient:
             )
             r.raise_for_status()
 
+    async def _replace_page(self, page_id: str, title: str, markdown: str) -> str:
+        """Replace page content and title. Returns the page URL slug."""
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"{self.base_url}/pages/update",
+                json={
+                    "pageId": page_id,
+                    "title": title,
+                    "operation": "replace",
+                    "content": markdown,
+                    "format": "markdown",
+                },
+                headers=self._headers(),
+            )
+            r.raise_for_status()
+            data = r.json().get("data", {})
+            return data.get("slug") or data.get("slugId") or page_id
+
     # ------------------------------------------------------------------
     # Folder pages (top-level parent pages acting as folders)
     # ------------------------------------------------------------------
@@ -455,31 +473,36 @@ class DocmostClient:
     # Public API
     # ------------------------------------------------------------------
 
-    async def save_character(self, char: Character, folder_key: str = "npcs") -> tuple[str, str]:
-        """Returns (page_id, page_url)."""
+    def _build_page_url(self, page_slug: str) -> str:
+        base = self.base_url
+        if base.endswith("/api"):
+            base = base[:-4]
+        return f"{base}/s/{self._space_slug}/p/{page_slug}"
+
+    async def save_character(self, char: Character, folder_key: str = "npcs", existing_page_id: str | None = None) -> tuple[str, str]:
+        """Returns (page_id, page_url). Updates existing page if existing_page_id is provided."""
         await self._ensure_auth()
         await self._ensure_space()
 
-        folder_page_id = await self._get_root_folder_page_id(folder_key)
-
         content = self._character_to_markdown(char)
+
+        if existing_page_id:
+            page_slug = await self._replace_page(existing_page_id, char.name, content)
+            page_url = self._build_page_url(page_slug)
+            logger.info(f"Updated '{char.name}' in Docmost (page {existing_page_id})")
+            return existing_page_id, page_url
+
+        folder_page_id = await self._get_root_folder_page_id(folder_key)
         page_data = await self._create_page(
             space_id=self._space_id,
             title=char.name,
             content=content,
             parent_page_id=folder_page_id,
         )
-
         page_id = page_data["id"]
-        # Docmost URL: /s/{space_slug}/p/{page_slug}
-        # page_data should include a 'slug' field like "my-character-5A8xj8JFin"
         page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
-        base = self.base_url
-        if base.endswith("/api"):
-            base = base[:-4]
-        page_url = f"{base}/s/{self._space_slug}/p/{page_slug}"
+        page_url = self._build_page_url(page_slug)
 
-        # Append a one-line entry to the folder index page
         entry = (
             f"- **{char.name}** — "
             f"{char.race} {char.character_class} Level {char.level}, {char.alignment}\n"
@@ -614,30 +637,32 @@ class DocmostClient:
         self._space_slug = None
         logger.info("DocmostClient config reloaded")
 
-    async def save_item(self, item: Item) -> tuple[str, str]:
-        """Returns (page_id, page_url). Saves under Items/{item_type}/."""
+    async def save_item(self, item: Item, existing_page_id: str | None = None) -> tuple[str, str]:
+        """Returns (page_id, page_url). Updates existing page if existing_page_id is provided."""
         await self._ensure_auth()
         await self._ensure_space()
+
+        content = self._item_to_markdown(item)
+
+        if existing_page_id:
+            page_slug = await self._replace_page(existing_page_id, item.name, content)
+            page_url = self._build_page_url(page_slug)
+            logger.info(f"Updated item '{item.name}' in Docmost (page {existing_page_id})")
+            return existing_page_id, page_url
 
         items_root_id = await self._get_root_folder_page_id("items")
         type_folder_id = await self._get_or_create_folder_page(
             self._space_id, item.item_type, parent_page_id=items_root_id
         )
-
-        content = self._item_to_markdown(item)
         page_data = await self._create_page(
             space_id=self._space_id,
             title=item.name,
             content=content,
             parent_page_id=type_folder_id,
         )
-
         page_id = page_data["id"]
         page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
-        base = self.base_url
-        if base.endswith("/api"):
-            base = base[:-4]
-        page_url = f"{base}/s/{self._space_slug}/p/{page_slug}"
+        page_url = self._build_page_url(page_slug)
 
         entry = (
             f"- **{item.name}** — {item.rarity} · "
@@ -651,30 +676,32 @@ class DocmostClient:
         logger.info(f"Saved item '{item.name}' to Docmost (page {page_id}, url={page_url})")
         return page_id, page_url
 
-    async def save_shop(self, shop: Shop) -> tuple[str, str]:
-        """Returns (page_id, page_url). Saves under Locations → Shops/."""
+    async def save_shop(self, shop: Shop, existing_page_id: str | None = None) -> tuple[str, str]:
+        """Returns (page_id, page_url). Updates existing page if existing_page_id is provided."""
         await self._ensure_auth()
         await self._ensure_space()
+
+        content = self._shop_to_markdown(shop)
+
+        if existing_page_id:
+            page_slug = await self._replace_page(existing_page_id, shop.name, content)
+            page_url = self._build_page_url(page_slug)
+            logger.info(f"Updated shop '{shop.name}' in Docmost (page {existing_page_id})")
+            return existing_page_id, page_url
 
         locations_root_id = await self._get_root_folder_page_id("locations")
         shops_folder_id = await self._get_or_create_folder_page(
             self._space_id, "Shops", parent_page_id=locations_root_id
         )
-
-        content = self._shop_to_markdown(shop)
         page_data = await self._create_page(
             space_id=self._space_id,
             title=shop.name,
             content=content,
             parent_page_id=shops_folder_id,
         )
-
         page_id = page_data["id"]
         page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
-        base = self.base_url
-        if base.endswith("/api"):
-            base = base[:-4]
-        page_url = f"{base}/s/{self._space_slug}/p/{page_slug}"
+        page_url = self._build_page_url(page_slug)
 
         entry = (
             f"- **{shop.name}** — {shop.category} {shop.shop_type}, "
