@@ -59,15 +59,14 @@ function switchView(view) {
   document.getElementById('viewForge').classList.toggle('hidden', view !== 'forge');
   document.getElementById('viewItems').classList.toggle('hidden', view !== 'items');
   document.getElementById('viewHistory').classList.toggle('hidden', view !== 'history');
+  document.getElementById('viewSettings').classList.toggle('hidden', view !== 'settings');
   document.getElementById('navForge').classList.toggle('nav-active', view === 'forge');
   document.getElementById('navItems').classList.toggle('nav-active', view === 'items');
   document.getElementById('navHistory').classList.toggle('nav-active', view === 'history');
-  if (view === 'history' && historyEntries.length === 0) {
-    loadHistoryList();
-  }
-  if (view === 'items') {
-    updateRarityBadge();
-  }
+  document.getElementById('navSettings').classList.toggle('nav-active', view === 'settings');
+  if (view === 'history' && historyEntries.length === 0) loadHistoryList();
+  if (view === 'items') updateRarityBadge();
+  if (view === 'settings') loadSettings();
 }
 
 function updateRarityBadge() {
@@ -213,6 +212,81 @@ function _formatTimestamp(ts) {
     return new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   } catch {
     return ts;
+  }
+}
+
+// -----------------------------------------------------------------------
+// Settings
+// -----------------------------------------------------------------------
+
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    if (!r.ok) throw new Error('Failed to load settings');
+    const s = await r.json();
+    document.getElementById('settingApiKey').value = s.anthropic_api_key || '';
+    document.getElementById('settingClaudeModel').value = s.claude_model || '';
+    document.getElementById('settingDocmostUrl').value = s.docmost_url || '';
+    document.getElementById('settingDocmostUser').value = s.docmost_username || '';
+    document.getElementById('settingDocmostPass').value = s.docmost_password || '';
+    document.getElementById('settingFolderNpcs').value = s.docmost_folder_npcs || '';
+    document.getElementById('settingFolderBestiary').value = s.docmost_folder_bestiary || '';
+    document.getElementById('settingFolderLocations').value = s.docmost_folder_locations || '';
+    document.getElementById('settingFolderEncounters').value = s.docmost_folder_encounters || '';
+  } catch (e) {
+    console.error('Could not load settings:', e);
+  }
+}
+
+async function saveSettings() {
+  setBusy('settingsSaveBtn', 'settingsSaveSpinner', 'settingsSaveBtnText', true, 'Saving…');
+  const resultEl = document.getElementById('settingsSaveResult');
+  resultEl.classList.add('hidden');
+
+  const body = {
+    anthropic_api_key: document.getElementById('settingApiKey').value,
+    claude_model: document.getElementById('settingClaudeModel').value.trim(),
+    docmost_url: document.getElementById('settingDocmostUrl').value.trim(),
+    docmost_username: document.getElementById('settingDocmostUser').value.trim(),
+    docmost_password: document.getElementById('settingDocmostPass').value,
+    docmost_folder_npcs: document.getElementById('settingFolderNpcs').value.trim(),
+    docmost_folder_bestiary: document.getElementById('settingFolderBestiary').value.trim(),
+    docmost_folder_locations: document.getElementById('settingFolderLocations').value.trim(),
+    docmost_folder_encounters: document.getElementById('settingFolderEncounters').value.trim(),
+  };
+
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Save failed');
+
+    resultEl.textContent = '✓ Settings saved';
+    resultEl.className = 'text-xs text-green-400';
+    resultEl.classList.remove('hidden');
+
+    // Refresh the folder dropdowns on the Forge and History tabs
+    await loadConfig();
+  } catch (e) {
+    resultEl.textContent = `✗ ${e.message}`;
+    resultEl.className = 'text-xs text-red-400';
+    resultEl.classList.remove('hidden');
+  } finally {
+    setBusy('settingsSaveBtn', 'settingsSaveSpinner', 'settingsSaveBtnText', false, 'Save Settings');
+  }
+}
+
+function toggleVisible(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = 'Hide';
+  } else {
+    input.type = 'password';
+    btn.textContent = 'Show';
   }
 }
 

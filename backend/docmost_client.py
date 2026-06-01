@@ -454,6 +454,18 @@ class DocmostClient:
 
         return "\n".join(lines)
 
+    def reload_config(self) -> None:
+        """Re-read config.yaml and reset auth state so the next request re-authenticates."""
+        cfg = _load_config()["docmost"]
+        self.base_url = cfg["url"].rstrip("/")
+        self.username = cfg["username"]
+        self.password = cfg["password"]
+        self.folder_names = cfg.get("folders", {})
+        self._token = None
+        self._space_id = None
+        self._space_slug = None
+        logger.info("DocmostClient config reloaded")
+
     async def save_item(self, item: Item) -> tuple[str, str]:
         """Returns (page_id, page_url). Saves under Items/{item_type}/."""
         await self._ensure_auth()

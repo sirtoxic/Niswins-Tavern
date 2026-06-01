@@ -5,9 +5,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values, set_key
 
-from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest
+from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, SettingsUpdate
 from character_generator import generate_character
 from item_generator import generate_item
 from docmost_client import DocmostClient
@@ -20,6 +20,7 @@ docmost = DocmostClient()
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+ENV_PATH = Path(__file__).parent.parent / ".env"
 
 
 def _load_config() -> dict:
@@ -39,6 +40,66 @@ async def get_config():
         "folders": cfg["docmost"]["folders"],
         "docmost_url": cfg["docmost"]["url"],
     }
+
+
+@app.get("/api/settings")
+async def get_settings():
+    env_vals = dotenv_values(str(ENV_PATH)) if ENV_PATH.exists() else {}
+    api_key = env_vals.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "")
+
+    cfg = _load_config()
+    dcfg = cfg.get("docmost", {})
+    folders = dcfg.get("folders", {})
+
+    return {
+        "anthropic_api_key": api_key,
+        "claude_model": cfg.get("claude", {}).get("model", "claude-sonnet-4-6"),
+        "docmost_url": dcfg.get("url", ""),
+        "docmost_username": dcfg.get("username", ""),
+        "docmost_password": dcfg.get("password", ""),
+        "docmost_folder_npcs": folders.get("npcs", "NPCs"),
+        "docmost_folder_bestiary": folders.get("bestiary", "Bestiary"),
+        "docmost_folder_locations": folders.get("locations", "Locations"),
+        "docmost_folder_encounters": folders.get("encounters", "Encounters"),
+    }
+
+
+@app.post("/api/settings")
+async def update_settings(req: SettingsUpdate):
+    try:
+        # Write API key to .env and update live environment
+        set_key(str(ENV_PATH), "ANTHROPIC_API_KEY", req.anthropic_api_key)
+        os.environ["ANTHROPIC_API_KEY"] = req.anthropic_api_key
+
+        # Build and write config.yaml
+        try:
+            with open(CONFIG_PATH) as f:
+                cfg = yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            cfg = {}
+
+        cfg["docmost"] = {
+            "url": req.docmost_url,
+            "username": req.docmost_username,
+            "password": req.docmost_password,
+            "folders": {
+                "npcs": req.docmost_folder_npcs,
+                "bestiary": req.docmost_folder_bestiary,
+                "locations": req.docmost_folder_locations,
+                "encounters": req.docmost_folder_encounters,
+            },
+        }
+        cfg["claude"] = {"model": req.claude_model}
+
+        with open(CONFIG_PATH, "w") as f:
+            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+        # Reload Docmost client with new credentials
+        docmost.reload_config()
+
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/generate")

@@ -265,3 +265,15 @@ class GenerateItemRequest(BaseModel):
 class SaveItemRequest(BaseModel):
     item: Item
     history_id: Optional[str] = None
+
+
+class SettingsUpdate(BaseModel):
+    anthropic_api_key: str = ""
+    claude_model: str = "claude-sonnet-4-6"
+    docmost_url: str = ""
+    docmost_username: str = ""
+    docmost_password: str = ""
+    docmost_folder_npcs: str = "NPCs"
+    docmost_folder_bestiary: str = "Bestiary"
+    docmost_folder_locations: str = "Locations"
+    docmost_folder_encounters: str = "Encounters"

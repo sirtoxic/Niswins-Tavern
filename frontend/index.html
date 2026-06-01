@@ -113,6 +113,7 @@
       <button id="navForge" onclick="switchView('forge')" class="nav-btn nav-active">⚒ Forge</button>
       <button id="navItems" onclick="switchView('items')" class="nav-btn">⚗ Items</button>
       <button id="navHistory" onclick="switchView('history')" class="nav-btn">📜 History</button>
+      <button id="navSettings" onclick="switchView('settings')" class="nav-btn">⚙ Settings</button>
     </nav>
   </header>
 
@@ -479,6 +480,96 @@
     </main>
 
   </div><!-- /viewHistory -->
+
+  <!-- Settings View -->
+  <div id="viewSettings" class="hidden h-[calc(100vh-73px)] overflow-y-auto p-6">
+    <div class="max-w-2xl mx-auto space-y-5">
+
+      <div class="section-header" style="font-size:0.85rem">Settings</div>
+
+      <!-- Claude API -->
+      <div class="panel space-y-3">
+        <div class="section-header">Claude API</div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Anthropic API Key</label>
+          <div class="flex gap-2">
+            <input id="settingApiKey" type="password" placeholder="sk-ant-api03-…" class="input-field text-sm font-mono flex-1" autocomplete="off" />
+            <button onclick="toggleVisible('settingApiKey', this)" class="btn-secondary text-xs px-3 flex-shrink-0">Show</button>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Claude Model</label>
+          <input id="settingClaudeModel" type="text" class="input-field text-sm" list="settingModelList" />
+          <datalist id="settingModelList">
+            <option value="claude-sonnet-4-6">
+            <option value="claude-haiku-4-5-20251001">
+            <option value="claude-opus-4-8">
+          </datalist>
+          <p class="text-xs text-gray-600 mt-1">Model used for all generation. Changing this affects cost and output quality.</p>
+        </div>
+      </div>
+
+      <!-- Docmost Connection -->
+      <div class="panel space-y-3">
+        <div class="section-header">Docmost Connection</div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Docmost API URL</label>
+          <input id="settingDocmostUrl" type="text" placeholder="https://wiki.example.com/api" class="input-field text-sm" />
+          <p class="text-xs text-gray-600 mt-1">Must end with <span class="text-gold">/api</span></p>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Username (email)</label>
+            <input id="settingDocmostUser" type="text" placeholder="tavern@example.com" class="input-field text-sm" autocomplete="off" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Password</label>
+            <div class="flex gap-2">
+              <input id="settingDocmostPass" type="password" placeholder="••••••••" class="input-field text-sm flex-1" autocomplete="off" />
+              <button onclick="toggleVisible('settingDocmostPass', this)" class="btn-secondary text-xs px-3 flex-shrink-0">Show</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Docmost Folders -->
+      <div class="panel space-y-3">
+        <div class="section-header">Docmost Character Folders</div>
+        <p class="text-xs text-gray-500">Page titles created in Docmost for each character category. Items always use <span class="text-gold">Items → [type]</span> and are not configurable here.</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">NPCs</label>
+            <input id="settingFolderNpcs" type="text" class="input-field text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Bestiary</label>
+            <input id="settingFolderBestiary" type="text" class="input-field text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Locations</label>
+            <input id="settingFolderLocations" type="text" class="input-field text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Encounters</label>
+            <input id="settingFolderEncounters" type="text" class="input-field text-sm" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Save -->
+      <div class="flex items-center gap-3 pb-4">
+        <button onclick="saveSettings()" id="settingsSaveBtn" class="btn-primary flex items-center gap-2">
+          <svg id="settingsSaveSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span id="settingsSaveBtnText">Save Settings</span>
+        </button>
+        <div id="settingsSaveResult" class="hidden text-xs"></div>
+      </div>
+
+    </div>
+  </div><!-- /viewSettings -->
 
   <script src="app.js"></script>
 </body>
