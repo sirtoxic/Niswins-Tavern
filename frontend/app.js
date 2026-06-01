@@ -931,12 +931,20 @@ function renderSheet(c, containerEl) {
   const abilityGrid = el('div', 'grid grid-cols-3 md:grid-cols-6 gap-2');
   const abilities = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
   const abbrMap = {strength:'STR',dexterity:'DEX',constitution:'CON',intelligence:'INT',wisdom:'WIS',charisma:'CHA'};
+  const abilityIconMap = {
+    strength:     'fa-hand-fist',
+    dexterity:    'fa-feather',
+    constitution: 'fa-heart-pulse',
+    intelligence: 'fa-book-open',
+    wisdom:       'fa-eye',
+    charisma:     'fa-masks-theater',
+  };
 
   for (const name of abilities) {
     const a = c.ability_scores[name];
     const box = el('div', 'stat-box');
     box.innerHTML = `
-      <div class="text-xs text-gold font-bold">${abbrMap[name]}</div>
+      <div class="text-xs text-gold font-bold"><i class="fa-solid ${abilityIconMap[name]} mr-1"></i>${abbrMap[name]}</div>
       <div class="text-2xl font-bold text-parchment">${sign(a.modifier)}</div>
       <div class="text-lg font-bold text-gray-200">${a.total}</div>
       <div class="text-xs text-gray-500 mt-1 space-y-0.5">
