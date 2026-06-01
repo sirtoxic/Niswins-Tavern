@@ -10,6 +10,9 @@ let currentItem = null;
 let currentItemHistoryId = null;
 let selectedHistoryEntryType = null;  // 'Character', 'Generic NPC', 'Item', etc.
 
+let historySearchQuery = '';
+let historyActiveTag = null;
+
 const RARITY_COLORS = {
   Common:    '#9d9d9d',
   Uncommon:  '#1eff00',
@@ -64,7 +67,10 @@ function switchView(view) {
   document.getElementById('navItems').classList.toggle('nav-active', view === 'items');
   document.getElementById('navHistory').classList.toggle('nav-active', view === 'history');
   document.getElementById('navSettings').classList.toggle('nav-active', view === 'settings');
-  if (view === 'history' && historyEntries.length === 0) loadHistoryList();
+  if (view === 'history') {
+    if (historyEntries.length === 0) loadHistoryList();
+    else renderHistoryList();
+  }
   if (view === 'items') updateRarityBadge();
   if (view === 'settings') loadSettings();
 }
@@ -97,15 +103,80 @@ async function loadHistoryList() {
   }
 }
 
+function filterHistory() {
+  historySearchQuery = (document.getElementById('historySearch')?.value || '').toLowerCase().trim();
+  renderHistoryList();
+}
+
+function setHistoryTag(tag) {
+  historyActiveTag = historyActiveTag === tag ? null : tag;
+  renderHistoryList();
+}
+
+function _buildTagFilters() {
+  const container = document.getElementById('historyTagFilters');
+  if (!container) return;
+  const tags = [...new Set(historyEntries.map(e => e.type))].sort();
+  container.innerHTML = '';
+
+  const allBtn = document.createElement('button');
+  const allActive = !historyActiveTag;
+  allBtn.className = 'text-xs px-2 py-0.5 rounded border transition-colors cursor-pointer';
+  allBtn.style.color = allActive ? '#c9a227' : '#8a7560';
+  allBtn.style.borderColor = allActive ? '#c9a227' : '#5a3e28';
+  allBtn.style.background = allActive ? 'rgba(201,162,39,0.08)' : 'transparent';
+  allBtn.textContent = `All (${historyEntries.length})`;
+  allBtn.onclick = () => { historyActiveTag = null; renderHistoryList(); };
+  container.appendChild(allBtn);
+
+  for (const tag of tags) {
+    const count = historyEntries.filter(e => e.type === tag).length;
+    const color = _typeColor(tag);
+    const isActive = historyActiveTag === tag;
+    const btn = document.createElement('button');
+    btn.className = 'text-xs px-2 py-0.5 rounded border transition-colors cursor-pointer';
+    btn.style.color = isActive ? color : '#8a7560';
+    btn.style.borderColor = isActive ? color : '#5a3e28';
+    btn.style.background = isActive ? `${color}18` : 'transparent';
+    btn.textContent = `${tag} (${count})`;
+    btn.onclick = () => setHistoryTag(tag);
+    container.appendChild(btn);
+  }
+}
+
 function renderHistoryList() {
+  _buildTagFilters();
+
   const container = document.getElementById('historyEntriesList');
   if (historyEntries.length === 0) {
     container.innerHTML =
       '<p class="text-xs text-gray-600 text-center pt-8">No generations yet.<br>Head to NPCs or Items to get started.</p>';
     return;
   }
+
+  let filtered = historyEntries;
+  if (historyActiveTag) {
+    filtered = filtered.filter(e => e.type === historyActiveTag);
+  }
+  if (historySearchQuery) {
+    filtered = filtered.filter(e => {
+      const name = e.name.toLowerCase();
+      const extra = [
+        e.type, e.race, e.character_class, e.alignment,
+        e.item_type, e.rarity,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return name.includes(historySearchQuery) || extra.includes(historySearchQuery);
+    });
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML =
+      '<p class="text-xs text-gray-600 text-center pt-4">No matching entries.</p>';
+    return;
+  }
+
   container.innerHTML = '';
-  for (const entry of historyEntries) {
+  for (const entry of filtered) {
     const card = document.createElement('div');
     card.className = 'history-card' + (entry.id === selectedHistoryEntryId ? ' selected' : '');
     card.onclick = () => openHistoryEntry(entry.id);
