@@ -602,7 +602,8 @@
               <a id="historyDocmostLink" class="hidden btn-secondary text-xs py-1.5 px-3" href="#" target="_blank" rel="noopener" style="text-decoration:none">View in Docmost →</a>
             </div>
           </div>
-          <div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-panelbg">
+          <!-- First-save row (hidden once synced) -->
+          <div id="historySaveRow" class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-panelbg">
             <select id="historySaveFolder" class="input-field text-xs" style="width:auto;padding:0.4rem 0.6rem"></select>
             <button onclick="saveFromHistory()" id="historySaveBtn" class="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5">
               <svg id="historySaveSpinner" class="hidden spinner w-3 h-3" fill="none" viewBox="0 0 24 24">
@@ -611,8 +612,32 @@
               </svg>
               <span id="historySaveBtnText">Save to Docmost</span>
             </button>
-            <div id="historySaveResult" class="hidden text-xs"></div>
           </div>
+          <!-- Sync status row (shown once synced) -->
+          <div id="historySyncStatus" class="hidden flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-panelbg">
+            <div class="flex items-center gap-1.5 text-xs text-green-400">
+              <i class="fa-solid fa-circle-check"></i>
+              <span id="historySyncStatusText"></span>
+            </div>
+            <button onclick="showResyncWarning()" class="btn-secondary text-xs py-1.5 px-3">
+              <i class="fa-solid fa-rotate mr-1"></i>Re-sync
+            </button>
+          </div>
+          <!-- Re-sync warning (shown when Re-sync is clicked) -->
+          <div id="historyResyncWarning" class="hidden mt-2">
+            <div class="flex items-start gap-3 p-3 rounded border border-amber-700 text-xs" style="background:rgba(120,53,15,0.3)">
+              <i class="fa-solid fa-triangle-exclamation text-amber-400 mt-0.5 flex-shrink-0"></i>
+              <div>
+                <div class="font-bold text-amber-200 mb-1">This will overwrite the existing Docmost page</div>
+                <div class="text-amber-300 mb-3">Any edits made directly in Docmost will be permanently replaced with this local version.</div>
+                <div class="flex gap-2">
+                  <button onclick="confirmResync()" class="btn-primary text-xs py-1.5 px-3"><i class="fa-solid fa-rotate mr-1"></i>Overwrite Docmost</button>
+                  <button onclick="cancelResync()" class="btn-secondary text-xs py-1.5 px-3">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="historySaveResult" class="hidden text-xs mt-2"></div>
         </div>
 
         <!-- Rendered character sheet -->

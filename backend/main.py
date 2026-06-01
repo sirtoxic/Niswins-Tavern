@@ -185,6 +185,7 @@ async def api_save(req: SaveRequest):
                 history_store.patch_entry(req.history_id, {
                     "docmost_page_id": page_id,
                     "docmost_url": docmost_url,
+                    "docmost_synced_at": datetime.now(timezone.utc).isoformat(),
                 })
             except Exception:
                 pass  # Don't fail the save if history update fails
@@ -233,6 +234,7 @@ async def api_save_item(req: SaveItemRequest):
                 history_store.patch_entry(req.history_id, {
                     "docmost_page_id": page_id,
                     "docmost_url": docmost_url,
+                    "docmost_synced_at": datetime.now(timezone.utc).isoformat(),
                 })
             except Exception:
                 pass
@@ -280,6 +282,7 @@ async def api_save_shop(req: SaveShopRequest):
                 history_store.patch_entry(req.history_id, {
                     "docmost_page_id": page_id,
                     "docmost_url": docmost_url,
+                    "docmost_synced_at": datetime.now(timezone.utc).isoformat(),
                 })
             except Exception:
                 pass

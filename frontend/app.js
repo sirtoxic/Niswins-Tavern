@@ -289,6 +289,7 @@ async function openHistoryEntry(entryId) {
       link.classList.add('hidden');
     }
 
+    _updateHistorySyncStatus(entry);
     document.getElementById('historySaveResult').classList.add('hidden');
     document.getElementById('historyPlaceholder').classList.add('hidden');
     document.getElementById('historyDetail').classList.remove('hidden');
@@ -591,11 +592,14 @@ async function saveFromHistory() {
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || 'Save failed');
 
+    const now = new Date().toISOString();
     const entry = historyEntries.find(e => e.id === currentHistoryId);
     if (entry) {
       entry.docmost_page_id = data.page_id;
       entry.docmost_url = data.docmost_url;
+      entry.docmost_synced_at = now;
       renderHistoryList();
+      _updateHistorySyncStatus(entry);
     }
 
     if (data.docmost_url) {
@@ -614,6 +618,38 @@ async function saveFromHistory() {
   } finally {
     setBusy('historySaveBtn', 'historySaveSpinner', 'historySaveBtnText', false, 'Save to Docmost');
   }
+}
+
+// -----------------------------------------------------------------------
+// Docmost sync status
+// -----------------------------------------------------------------------
+
+function _updateHistorySyncStatus(entry) {
+  const hasSynced = !!entry.docmost_page_id;
+  document.getElementById('historySaveRow').classList.toggle('hidden', hasSynced);
+  document.getElementById('historySyncStatus').classList.toggle('hidden', !hasSynced);
+  document.getElementById('historyResyncWarning').classList.add('hidden');
+
+  if (hasSynced) {
+    const ts = entry.docmost_synced_at || entry.timestamp;
+    document.getElementById('historySyncStatusText').textContent =
+      `Synced to Docmost · ${_formatTimestamp(ts)}`;
+  }
+}
+
+function showResyncWarning() {
+  document.getElementById('historyResyncWarning').classList.remove('hidden');
+}
+
+function cancelResync() {
+  document.getElementById('historyResyncWarning').classList.add('hidden');
+}
+
+async function confirmResync() {
+  document.getElementById('historyResyncWarning').classList.add('hidden');
+  // Temporarily show the save row so setBusy can target historySaveBtn/Spinner/BtnText
+  document.getElementById('historySaveRow').classList.remove('hidden');
+  await saveFromHistory();
 }
 
 // -----------------------------------------------------------------------
