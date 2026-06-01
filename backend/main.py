@@ -113,6 +113,47 @@ async def test_page_url(req: TestPageUrlRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/settings/debug-page")
+async def debug_page_url(req: TestPageUrlRequest):
+    """Returns raw Docmost API responses for each resolution strategy — for diagnosing URL issues."""
+    import httpx
+    from urllib.parse import urlparse
+    results = []
+    try:
+        await docmost._ensure_auth()
+        parsed = urlparse(req.url)
+        parts = [p for p in parsed.path.split("/") if p]
+        space_slug = page_slug = None
+        try:
+            space_slug = parts[parts.index("s") + 1]
+            page_slug  = parts[parts.index("p") + 1]
+        except (ValueError, IndexError):
+            pass
+        results.append({"parsed": {"space_slug": space_slug, "page_slug": page_slug}})
+
+        async with httpx.AsyncClient() as client:
+            for label, url, kwargs in [
+                ("page-info (GET)", f"{docmost.base_url}/pages/page-info",
+                 {"params": {"pageSlug": page_slug, "spaceSlug": space_slug}}),
+                ("page-info (POST)", f"{docmost.base_url}/pages/page-info",
+                 {"json": {"pageSlug": page_slug, "spaceSlug": space_slug}}),
+                ("direct slug GET", f"{docmost.base_url}/pages/{page_slug}", {}),
+            ]:
+                try:
+                    method = client.post if "POST" in label else client.get
+                    r = await method(url, headers=docmost._headers(), timeout=10.0, **kwargs)
+                    results.append({
+                        "strategy": label,
+                        "status": r.status_code,
+                        "body": r.text[:400],
+                    })
+                except Exception as ex:
+                    results.append({"strategy": label, "error": str(ex)})
+    except Exception as ex:
+        results.append({"auth_error": str(ex)})
+    return {"results": results}
+
+
 @app.post("/api/generate")
 async def api_generate(req: GenerateRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
