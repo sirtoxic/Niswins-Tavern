@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+import json
+import os
+import anthropic
+from models import Shop, GenerateShopRequest
+from character_generator import _get_model_pricing, MODEL
+
+_SYSTEM_PROMPT = """You are a D&D 5e worldbuilder specialising in creating vivid, memorable shops and merchants for tabletop RPGs. You produce detailed, flavourful content as structured JSON.
+
+Rules:
+- Shops and shopkeepers should feel grounded and real — they have history, personality, and quirks
+- Items should feel curated, not random — a good merchant knows their stock
+- Descriptions should be immediately usable at the table
+- D&D 5e PHB prices as baseline; adjust for rarity and setting
+- Return ONLY valid JSON — no prose, no markdown fences"""
+
+
+def _detail_instructions(detail_level: str) -> str:
+    if detail_level == "low":
+        return "1 paragraph (4-6 sentences) covering the shop's appearance and feel"
+    elif detail_level == "high":
+        return (
+            "5-10 paragraphs covering: exterior appearance, interior layout, atmosphere and smells, "
+            "the shop's history and reputation, notable features, regular clientele, any secrets or hooks, "
+            "and how it fits into the surrounding neighbourhood"
+        )
+    else:
+        return "3 paragraphs covering: the shop's appearance and layout, its atmosphere and clientele, and one interesting detail or story hook"
+
+
+def _build_prompt(req: GenerateShopRequest) -> str:
+    rarity_str = ", ".join(req.rarities) if req.rarities else "Common, Uncommon"
+    detail = _detail_instructions(req.detail_level)
+
+    if req.under_table:
+        under_table_note = (
+            "Include a mix of legitimate stock and some under-the-table items that are illegal, "
+            "stolen, or that the shopkeeper shouldn't openly have. Mark under-the-table items with "
+            "is_under_table: true. These should be plausible for this shop type but risky to buy openly."
+        )
+    else:
+        under_table_note = "All items are legitimate stock. Set is_under_table: false for every item."
+
+    extras = []
+    if req.additional_notes.strip():
+        extras.append(f"Additional notes: {req.additional_notes}")
+    extra_block = ("\n" + "\n".join(extras)) if extras else ""
+
+    return f"""Generate a D&D 5e shop with the following parameters:
+- Physical form: {req.shop_type}
+- Category / speciality: {req.category}
+- Number of items to stock: {req.item_count}
+- Item rarities to include: {rarity_str}
+- {under_table_note}
+- Shop description detail: {detail}
+- Shopkeeper description: 1-2 sentences each for appearance and personality{extra_block}
+
+Return a JSON object matching this exact schema. Every field is required.
+
+{{
+  "name": "string — the shop's name (e.g. 'The Crooked Compass', 'Mira's Potions')",
+  "shop_type": "{req.shop_type}",
+  "category": "{req.category}",
+  "description": "string — {detail}",
+  "atmosphere": "string — one evocative sentence capturing the immediate feel of the place",
+  "shopkeeper": {{
+    "name": "string — full name",
+    "race": "string — D&D 5e race",
+    "character_class": "string — occupation class e.g. Commoner, Merchant, Wizard, Rogue, Fighter",
+    "gender": "string — optional, may be empty",
+    "appearance": "string — 1-2 sentences: build, clothing, notable features, mannerisms",
+    "personality": "string — 1-2 sentences: temperament, speech style, attitude to customers",
+    "motivation": "string — one sentence: what drives them (profit, passion, debt, hiding something, etc.)",
+    "concept": "string — a punchy NPC concept for use as a generation prompt, e.g. 'A half-elf alchemist who secretly brews illegal paralytic agents for the city watch'"
+  }},
+  "items": [
+    {{
+      "name": "string — item name",
+      "item_type": "string — category e.g. Potion, Longsword, Cloak, Ring, Ration, Map, Tool",
+      "rarity": "string — exactly one of: Common, Uncommon, Rare, Epic, Legendary",
+      "price_gp": integer or null,
+      "description": "string — 1-2 sentences: what it looks like and what it does or is used for",
+      "is_under_table": boolean,
+      "concept": "string — a concise item concept prompt for full item generation, e.g. 'A dagger that always returns to the thrower'"
+    }}
+  ]
+}}
+
+Generate exactly {req.item_count} items. Distribute rarities naturally across: {rarity_str}."""
+
+
+async def generate_shop(req: GenerateShopRequest) -> tuple:
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    message = client.messages.create(
+        model=MODEL,
+        max_tokens=8192,
+        system=_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": _build_prompt(req)}],
+    )
+
+    raw = message.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1]
+        raw = raw.rsplit("```", 1)[0]
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Claude returned malformed JSON: {e}\n\nRaw output:\n{raw[:500]}")
+
+    input_tokens = message.usage.input_tokens
+    output_tokens = message.usage.output_tokens
+    input_cost, output_cost = await _get_model_pricing(MODEL)
+    cost_usd = input_tokens * input_cost + output_tokens * output_cost
+
+    usage = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+        "cost_usd": round(cost_usd, 6),
+        "model": MODEL,
+    }
+
+    return Shop(**data), usage

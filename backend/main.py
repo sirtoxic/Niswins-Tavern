@@ -7,25 +7,56 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv, dotenv_values, set_key
 
-from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, SettingsUpdate, TestPageUrlRequest
+from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, SettingsUpdate, TestPageUrlRequest
 from character_generator import generate_character
 from item_generator import generate_item
+from shop_generator import generate_shop
 from docmost_client import DocmostClient
 import history_store
-
-load_dotenv(Path(__file__).parent.parent / ".env")
-
-app = FastAPI(title="Niswins Tavern")
-docmost = DocmostClient()
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
 ENV_PATH = Path(__file__).parent.parent / ".env"
 
 
+def _ensure_config_files() -> None:
+    """Create .env and config.yaml with defaults on first run if they don't exist."""
+    if not ENV_PATH.exists():
+        ENV_PATH.write_text("ANTHROPIC_API_KEY=\n")
+
+    if not CONFIG_PATH.exists():
+        default_cfg = {
+            "docmost": {
+                "url": "",
+                "username": "",
+                "password": "",
+                "folder_urls": {
+                    "npcs": "",
+                    "bestiary": "",
+                    "locations": "",
+                    "encounters": "",
+                    "items": "",
+                },
+            },
+            "claude": {"model": "claude-sonnet-4-6"},
+        }
+        with open(CONFIG_PATH, "w") as f:
+            yaml.dump(default_cfg, f, default_flow_style=False, allow_unicode=True)
+
+
+_ensure_config_files()
+load_dotenv(ENV_PATH)
+
+app = FastAPI(title="Niswins Tavern")
+docmost = DocmostClient()
+
+
 def _load_config() -> dict:
-    with open(CONFIG_PATH) as f:
-        return yaml.safe_load(f)
+    try:
+        with open(CONFIG_PATH) as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
 
 
 @app.get("/")
@@ -196,6 +227,53 @@ async def api_generate_item(req: GenerateItemRequest):
 async def api_save_item(req: SaveItemRequest):
     try:
         page_id, docmost_url = await docmost.save_item(req.item)
+
+        if req.history_id:
+            try:
+                history_store.patch_entry(req.history_id, {
+                    "docmost_page_id": page_id,
+                    "docmost_url": docmost_url,
+                })
+            except Exception:
+                pass
+
+        return {"success": True, "page_id": page_id, "docmost_url": docmost_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/generate-shop")
+async def api_generate_shop(req: GenerateShopRequest):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+    try:
+        shop, usage = await generate_shop(req)
+
+        ts = datetime.now(timezone.utc)
+        entry_id = history_store.make_entry_id(ts, shop.name)
+        entry = {
+            "id": entry_id,
+            "timestamp": ts.isoformat(),
+            "type": "Shop",
+            "name": shop.name,
+            "category": shop.category,
+            "shop_type": shop.shop_type,
+            "item_count": len(shop.items),
+            "docmost_page_id": None,
+            "docmost_url": None,
+            "shop": shop.model_dump(),
+        }
+        history_store.save_entry(entry)
+
+        return {"shop": shop, "usage": usage, "history_id": entry_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/save-shop")
+async def api_save_shop(req: SaveShopRequest):
+    try:
+        page_id, docmost_url = await docmost.save_shop(req.shop)
 
         if req.history_id:
             try:

@@ -1,8 +1,8 @@
 This is a little side project that i generated with AI dont expect updates or for it to be fully working. I only know enough code to be dangerous. One day this may be somthing cool.
 
-# Niswins Tavern — Character Forge & Item Workshop
+# Niswins Tavern — Character Forge, Item Workshop & Shop Generator
 
-A D&D 5e NPC, character, and magic item generator powered by the Claude API. Fill out a short form, get complete stat blocks and lore-rich item descriptions, then save directly to [Docmost](https://docmost.com) or export as PDF / Foundry VTT JSON.
+A D&D 5e NPC, character, magic item, and shop generator powered by the Claude API. Fill out a short form, get complete stat blocks, lore-rich item descriptions, and fully stocked shops — then save directly to [Docmost](https://docmost.com) or export as PDF / Foundry VTT JSON.
 
 ---
 
@@ -34,10 +34,23 @@ A D&D 5e NPC, character, and magic item generator powered by the Claude API. Fil
 - Save to Docmost under `Items → {item type}` two-level hierarchy (auto-created)
 - Export to PDF
 
+### Shop Generator
+- Generates a complete shop in one click: shop details, a full shopkeeper NPC, and a stock of items
+- Shop types: building, stall, cart, ship, cave
+- Shop categories: General, Weapon, Armour, Magic, Alchemist, Jeweller, Blacksmith, Tailor, and more
+- Configure item count, rarity mix (Common → Legendary toggles), and detail level
+- Optional **under-the-table** stock for black-market or shady merchants
+- Each item has its own **Generate** button — opens a modal overlay to flesh out a full Item Workshop entry without leaving the shop
+- The shopkeeper card has a **Generate NPC** button for the same in-place modal workflow
+- Save to Docmost under `Locations → Shops` (auto-created)
+- Re-generate items and NPCs from any shop entry in History
+
 ### General
+- Hash-based URL routing — browser URL updates as you navigate between views
 - Token usage and estimated cost displayed after every generation
 - Full generation history with search — reopen, re-save, or re-export any past result
 - Folder page IDs cached persistently — no duplicate wiki pages across restarts
+- All settings (API key, Docmost credentials, Claude model) configurable via the in-app Settings page — no manual file editing required
 - Containerised — runs entirely via Docker Compose
 
 ---
@@ -59,46 +72,7 @@ git clone https://github.com/sirtoxic/Niswins-Tavern.git
 cd Niswins-Tavern
 ```
 
-### 2. Create your `.env` file
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and add your Anthropic API key:
-
-```env
-ANTHROPIC_API_KEY=sk-ant-api03-...
-```
-
-See [Getting an Anthropic API key](#getting-an-anthropic-api-key) below.
-
-### 3. Create your `config.yaml` file
-
-```bash
-cp config.example.yaml config.yaml
-```
-
-Edit `config.yaml` with your Docmost details:
-
-```yaml
-docmost:
-  url: "https://your-docmost-instance.example.com/api"
-  username: "your-service-account@example.com"
-  password: "your-password"
-  folders:
-    npcs: "NPCs"
-    bestiary: "Bestiary"
-    locations: "Locations"
-    encounters: "Encounters"
-
-claude:
-  model: "claude-sonnet-4-6"
-```
-
-See [Configuring Docmost](#configuring-docmost) below.
-
-### 4. Build and run
+### 2. Build and run
 
 ```bash
 docker compose up --build
@@ -117,6 +91,17 @@ To stop:
 ```bash
 docker compose down
 ```
+
+### 3. Configure via Settings
+
+On first run, `.env` and `config.yaml` are created automatically with empty defaults. Open **http://localhost:8000** and go to the **Settings** tab to enter your:
+
+- Anthropic API key
+- Docmost URL, username, and password
+- Claude model (optional — defaults to `claude-sonnet-4-6`)
+- Docmost folder URLs for each category (optional — folders are auto-created if left blank)
+
+Settings are saved back to `.env` and `config.yaml` on disk, so they persist across restarts and can also be edited manually if preferred.
 
 ---
 
@@ -184,9 +169,9 @@ volumes:
 
 > **Note:** The `APP_SECRET` must be a long random string. Generate one with `openssl rand -hex 32`.
 >
-> After first run, open Docmost at `http://localhost:3000`, complete the setup wizard, create a service account, and update `config.yaml` with the account credentials and `http://localhost:3000/api` as the URL.
+> After first run, open Docmost at `http://localhost:3000`, complete the setup wizard, create a service account, and add the credentials in the Niswins Tavern **Settings** tab.
 
-If you have an existing Docmost instance elsewhere, just use the minimal `docker-compose.yml` from the repo and point `config.yaml` at it.
+If you have an existing Docmost instance elsewhere, just use the minimal `docker-compose.yml` from the repo and configure the connection via Settings.
 
 ---
 
@@ -195,12 +180,12 @@ If you have an existing Docmost instance elsewhere, just use the minimal `docker
 1. Go to [console.anthropic.com](https://console.anthropic.com) and sign in (or create an account).
 2. Navigate to **API Keys** in the left sidebar.
 3. Click **Create Key**, give it a name (e.g. `niswins-tavern`), and copy the key — it will only be shown once.
-4. Paste it into your `.env` file:
+4. Paste it into the **Settings** tab in the app, or add it manually to `.env`:
    ```env
    ANTHROPIC_API_KEY=sk-ant-api03-...
    ```
 
-> **Pricing note:** The Claude API is a paid service. Niswins Tavern uses `claude-sonnet-4-6` and shows token counts and estimated costs after each generation. Character generation typically costs $0.05–$0.15; item generation is cheaper at $0.01–$0.05. New Anthropic accounts receive a small amount of free credit.
+> **Pricing note:** The Claude API is a paid service. Niswins Tavern uses `claude-sonnet-4-6` by default and shows token counts and estimated costs after each generation. Character generation typically costs $0.05–$0.15; item generation is cheaper at $0.01–$0.05. New Anthropic accounts receive a small amount of free credit.
 
 ---
 
@@ -212,30 +197,19 @@ Niswins Tavern saves content as formatted Markdown pages in your Docmost wiki us
 
 1. In your Docmost instance, create a dedicated user account for the app (e.g. `tavern@yourdomain.com`).
 2. Give it access to the space where you want content saved.
-3. Add the email and password to `config.yaml` under `docmost.username` and `docmost.password`.
+3. Enter the email and password in the **Settings** tab, or add them to `config.yaml` manually.
 
-### Folder mapping (characters)
+### Folder mapping
 
-The `folders` section in `config.yaml` maps internal keys to page titles created in Docmost. Characters are saved as child pages under their folder page.
+The **Settings** tab has a URL field for each category (NPCs, Bestiary, Locations, Encounters, Items). Paste the Docmost page URL for an existing folder, or leave it blank — the app will auto-create a folder at the root of your space on first save and cache it for future runs.
 
-| Key | Default page title | Used for |
-|---|---|---|
-| `npcs` | NPCs | Named NPCs and player-facing characters |
-| `bestiary` | Bestiary | Monsters and animals |
-| `locations` | Locations | *(future feature)* |
-| `encounters` | Encounters | *(future feature)* |
+Content is saved in the following hierarchy:
 
-### Item folders (automatic)
-
-Items do not use the `folders` config. They are always saved under:
-
-```
-Items/
-└── {item_type}/    ← created automatically from the item type you enter
-    └── Item Name
-```
-
-The `Items` root folder and each type subfolder are created on first use and cached — they are never duplicated across restarts.
+| Type | Path |
+|---|---|
+| Characters / NPCs | `{folder} / Character Name` |
+| Items | `Items / {item_type} / Item Name` |
+| Shops | `Locations / Shops / Shop Name` |
 
 ---
 
@@ -251,33 +225,33 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 # Install dependencies
 pip install -r backend/requirements.txt
 
-# Run the dev server (from the project root)
-cd backend && PYTHONPATH=.. uvicorn main:app --reload --port 8000
+# Run the dev server (from the backend directory)
+cd backend && uvicorn main:app --reload --port 8000
 ```
 
-Then open **http://localhost:8000**.
+Then open **http://localhost:8000** and configure everything via the Settings tab.
 
 ---
 
-## Environment Files Reference
+## Configuration Files Reference
+
+Both files are created automatically on first run. They are gitignored and can be edited manually at any time — changes take effect after a restart (or immediately for settings saved via the in-app Settings page).
 
 ### `.env`
 
-| Variable | Required | Description |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key (`sk-ant-api03-...`) |
+| Variable | Description |
+|---|---|
+| `ANTHROPIC_API_KEY` | Your Anthropic API key (`sk-ant-api03-...`) |
 
 ### `config.yaml`
 
-| Key | Required | Description |
-|---|---|---|
-| `docmost.url` | Yes | Full URL to your Docmost API endpoint, e.g. `https://wiki.example.com/api` |
-| `docmost.username` | Yes | Email address of the Docmost service account |
-| `docmost.password` | Yes | Password of the Docmost service account |
-| `docmost.folders.*` | Yes | Page title mappings for character folder types |
-| `claude.model` | No | Claude model to use (default: `claude-sonnet-4-6`) |
-
-> Neither `.env` nor `config.yaml` are committed to the repository. Both are mounted into the container at runtime via Docker Compose volumes.
+| Key | Description |
+|---|---|
+| `docmost.url` | Full URL to your Docmost API endpoint, e.g. `https://wiki.example.com/api` |
+| `docmost.username` | Email address of the Docmost service account |
+| `docmost.password` | Password of the Docmost service account |
+| `docmost.folder_urls.*` | Docmost page URLs for each category folder (auto-created if blank) |
+| `claude.model` | Claude model to use (default: `claude-sonnet-4-6`) |
 
 ---
 
@@ -290,17 +264,18 @@ Then open **http://localhost:8000**.
 │   ├── models.py               # Pydantic models for all request/response types
 │   ├── character_generator.py  # Character generation via Claude API
 │   ├── item_generator.py       # Item generation via Claude API
-│   ├── docmost_client.py       # Docmost wiki integration (characters + items)
+│   ├── shop_generator.py       # Shop + shopkeeper + item generation via Claude API
+│   ├── docmost_client.py       # Docmost wiki integration (characters, items, shops)
 │   ├── history_store.py        # Local JSON history persistence
 │   └── requirements.txt
 ├── frontend/
-│   ├── index.html              # Single-page UI (Forge / Items / History tabs)
-│   └── app.js                  # Sheet renderers, item display, export logic
+│   ├── index.html              # Single-page UI (Forge / Items / Shops / History / Settings)
+│   └── app.js                  # Sheet renderers, modal overlay, export logic, hash routing
 ├── history/                    # Generated history files (gitignored)
 ├── Dockerfile
 ├── docker-compose.yml
-├── config.example.yaml         # Template — copy to config.yaml
-└── .env.example                # Template — copy to .env
+├── config.example.yaml         # Reference template (the real config.yaml is auto-generated)
+└── .env.example                # Reference template (the real .env is auto-generated)
 ```
 
 ---

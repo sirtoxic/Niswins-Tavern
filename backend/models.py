@@ -267,6 +267,56 @@ class SaveItemRequest(BaseModel):
     history_id: Optional[str] = None
 
 
+# ---------------------------------------------------------------------------
+# Shop models
+# ---------------------------------------------------------------------------
+
+class ShopItem(BaseModel):
+    name: str
+    item_type: str
+    rarity: str
+    price_gp: Optional[int] = None
+    description: str
+    is_under_table: bool = False
+    concept: str  # pre-filled concept for full item generation
+
+
+class ShopKeeper(BaseModel):
+    name: str
+    race: str
+    character_class: str = "Commoner"
+    gender: str = ""
+    appearance: str
+    personality: str
+    motivation: str = ""
+    concept: str  # pre-filled concept for full NPC generation
+
+
+class Shop(BaseModel):
+    name: str
+    shop_type: str
+    category: str
+    description: str
+    atmosphere: str = ""
+    shopkeeper: ShopKeeper
+    items: list[ShopItem]
+
+
+class GenerateShopRequest(BaseModel):
+    shop_type: str = "building"
+    category: str = "General"
+    item_count: int = 8
+    under_table: bool = False
+    rarities: list[str] = ["Common", "Uncommon"]
+    detail_level: str = "medium"
+    additional_notes: str = ""
+
+
+class SaveShopRequest(BaseModel):
+    shop: Shop
+    history_id: Optional[str] = None
+
+
 class SettingsUpdate(BaseModel):
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-6"

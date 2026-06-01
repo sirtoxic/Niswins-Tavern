@@ -57,15 +57,23 @@ function setDetail(level) {
 // View switching
 // -----------------------------------------------------------------------
 
-function switchView(view) {
+const VIEW_HASHES = { forge: '#npcs', items: '#items', shops: '#shops', history: '#history', settings: '#settings' };
+const HASH_VIEWS = { '#npcs': 'forge', '#items': 'items', '#shops': 'shops', '#history': 'history', '#settings': 'settings' };
+
+function switchView(view, updateHash = true) {
   document.getElementById('viewForge').classList.toggle('hidden', view !== 'forge');
   document.getElementById('viewItems').classList.toggle('hidden', view !== 'items');
+  document.getElementById('viewShops').classList.toggle('hidden', view !== 'shops');
   document.getElementById('viewHistory').classList.toggle('hidden', view !== 'history');
   document.getElementById('viewSettings').classList.toggle('hidden', view !== 'settings');
   document.getElementById('navForge').classList.toggle('nav-active', view === 'forge');
   document.getElementById('navItems').classList.toggle('nav-active', view === 'items');
+  document.getElementById('navShops').classList.toggle('nav-active', view === 'shops');
   document.getElementById('navHistory').classList.toggle('nav-active', view === 'history');
   document.getElementById('navSettings').classList.toggle('nav-active', view === 'settings');
+  if (updateHash && location.hash !== (VIEW_HASHES[view] || '')) {
+    history.pushState(null, '', VIEW_HASHES[view] || '#npcs');
+  }
   if (view === 'history') {
     if (historyEntries.length === 0) loadHistoryList();
     else renderHistoryList();
@@ -73,6 +81,16 @@ function switchView(view) {
   if (view === 'items') updateRarityBadge();
   if (view === 'settings') loadSettings();
 }
+
+window.addEventListener('hashchange', () => {
+  const view = HASH_VIEWS[location.hash] || 'forge';
+  switchView(view, false);
+});
+
+window.addEventListener('DOMContentLoaded', () => {
+  const view = HASH_VIEWS[location.hash] || 'forge';
+  switchView(view, false);
+});
 
 function updateRarityBadge() {
   const rarity = document.getElementById('itemRarity').value;
@@ -212,20 +230,30 @@ async function openHistoryEntry(entryId) {
     selectedHistoryEntryType = entry.type;
     currentHistoryId = entry.id;
 
-    if (entry.type === 'Item') {
+    const isItem = entry.type === 'Item';
+    const isShop = entry.type === 'Shop';
+
+    if (isItem) {
       currentItem = entry.item;
+      currentCharacter = null;
+      currentShop = null;
+    } else if (isShop) {
+      currentShop = entry.shop;
+      currentItem = null;
       currentCharacter = null;
     } else {
       currentCharacter = entry.character;
       currentItem = null;
+      currentShop = null;
     }
 
     // Meta line
-    const isItem = entry.type === 'Item';
     let metaHtml = `<span class="font-bold text-parchment">${entry.name}</span>`;
     if (isItem) {
       const rarityColor = RARITY_COLORS[entry.rarity] || '#9d9d9d';
       metaHtml += `<span class="ml-2">${entry.item_type} · <span style="color:${rarityColor}">${entry.rarity}</span> · Levels ${entry.target_level_min}–${entry.target_level_max}</span>`;
+    } else if (isShop) {
+      metaHtml += `<span class="ml-2">${entry.category} ${entry.shop_type} · ${entry.item_count} items</span>`;
     } else {
       metaHtml += `<span class="ml-2">${entry.character_class} · ${entry.race} · Level ${entry.level} · ${entry.alignment}</span>`;
     }
@@ -233,8 +261,8 @@ async function openHistoryEntry(entryId) {
     document.getElementById('historyEntryMeta').innerHTML = metaHtml;
 
     // Show/hide action bar elements based on entry type
-    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isItem);
-    document.getElementById('historySaveFolder').classList.toggle('hidden', isItem);
+    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isItem || isShop);
+    document.getElementById('historySaveFolder').classList.toggle('hidden', isItem || isShop);
 
     // Docmost link
     const link = document.getElementById('historyDocmostLink');
@@ -253,6 +281,8 @@ async function openHistoryEntry(entryId) {
     historySheet.innerHTML = '';
     if (isItem) {
       renderItemSheet(entry.item, historySheet);
+    } else if (isShop) {
+      _renderShopContent(entry.shop, historySheet);
     } else {
       renderSheet(entry.character, historySheet);
     }
@@ -269,6 +299,7 @@ function _typeColor(type) {
     'Location':    '#4a6e9e',
     'Encounter':   '#8b1a1a',
     'Item':        '#a335ee',
+    'Shop':        '#2e86ab',
   };
   return map[type] || '#8a7560';
 }
@@ -277,6 +308,9 @@ function _entrySubtitle(entry) {
   if (entry.type === 'Item') {
     const rarityColor = RARITY_COLORS[entry.rarity] || '#9d9d9d';
     return `${entry.item_type} · <span style="color:${rarityColor}">${entry.rarity}</span> · Lvl ${entry.target_level_min}–${entry.target_level_max}`;
+  }
+  if (entry.type === 'Shop') {
+    return `${entry.category} ${entry.shop_type} · ${entry.item_count ?? '?'} items`;
   }
   return `${entry.character_class} · ${entry.race} · Lvl ${entry.level}`;
 }
@@ -513,7 +547,8 @@ async function saveCharacter() {
 
 async function saveFromHistory() {
   const isItem = selectedHistoryEntryType === 'Item';
-  if (isItem ? !currentItem : !currentCharacter) return;
+  const isShop = selectedHistoryEntryType === 'Shop';
+  if (isItem ? !currentItem : isShop ? !currentShop : !currentCharacter) return;
 
   setBusy('historySaveBtn', 'historySaveSpinner', 'historySaveBtnText', true, 'Saving…');
   const resultEl = document.getElementById('historySaveResult');
@@ -524,6 +559,9 @@ async function saveFromHistory() {
     if (isItem) {
       endpoint = '/api/save-item';
       body = { item: currentItem, history_id: currentHistoryId };
+    } else if (isShop) {
+      endpoint = '/api/save-shop';
+      body = { shop: currentShop, history_id: currentHistoryId };
     } else {
       endpoint = '/api/save';
       body = { character: currentCharacter, folder: document.getElementById('historySaveFolder').value, history_id: currentHistoryId };
@@ -1295,7 +1333,7 @@ function renderItemSheet(item, containerEl) {
   let attuneLine = '';
   if (item.requires_attunement) {
     const byNote = item.attunement_by ? ` by ${item.attunement_by}` : '';
-    attuneLine = `<span class="source-tag" style="color:#60a5fa;border-color:#60a5fa">⚡ Requires Attunement${byNote}</span>`;
+    attuneLine = `<span class="source-tag" style="color:#60a5fa;border-color:#60a5fa"><i class="fa-solid fa-bolt mr-1"></i>Requires Attunement${byNote}</span>`;
   }
   header.innerHTML = `
     <h2 class="text-3xl font-bold mb-2" style="color:${rarityColor}">${item.name}</h2>
@@ -1368,5 +1406,438 @@ function renderItemSheet(item, containerEl) {
   }
 }
 
+// -----------------------------------------------------------------------
+// Shop content renderer (used by both Shop view and History view)
+// -----------------------------------------------------------------------
+
+function _renderShopContent(shop, container) {
+  // Append mode — caller is responsible for clearing old content first
+  // (history view passes an empty div; shop view clears before calling)
+
+  // Header
+  const header = el('div', 'panel');
+  header.innerHTML = `
+    <h2 class="text-3xl font-bold text-parchment mb-1">${shop.name}</h2>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <span class="source-tag">${shop.shop_type.charAt(0).toUpperCase() + shop.shop_type.slice(1)}</span>
+      <span class="source-tag text-gold">${shop.category}</span>
+    </div>
+    ${shop.atmosphere ? `<p class="text-sm text-gray-400 italic">${shop.atmosphere}</p>` : ''}
+  `;
+  container.appendChild(header);
+
+  // Description
+  const descPanel = el('div', 'panel');
+  descPanel.innerHTML = `<div class="section-header">About the Shop</div>`;
+  const descBody = el('div', 'text-sm text-gray-300 space-y-3');
+  for (const para of shop.description.split(/\n\n+/)) {
+    if (para.trim()) {
+      const p = document.createElement('p');
+      p.textContent = para.trim();
+      descBody.appendChild(p);
+    }
+  }
+  descPanel.appendChild(descBody);
+  container.appendChild(descPanel);
+
+  // Shopkeeper
+  const sk = shop.shopkeeper;
+  const skPanel = el('div', 'panel');
+  const genderNote = sk.gender ? ` (${sk.gender})` : '';
+  const skHeader = el('div', 'flex items-start justify-between gap-3 mb-3');
+  skHeader.innerHTML = `
+    <div class="section-header" style="margin-bottom:0;border:none">The Shopkeeper</div>
+    <button onclick="useShopkeeperAsPrompt()" class="btn-secondary text-xs py-1 px-2 flex-shrink-0 flex items-center gap-1">
+      <i class="fa-solid fa-users"></i> Generate NPC
+    </button>
+  `;
+  skPanel.appendChild(skHeader);
+  skPanel.innerHTML += `
+    <p class="text-sm font-bold text-parchment mb-1">${sk.name}
+      <span class="text-gray-500 font-normal text-xs ml-1">— ${sk.race}${genderNote}, ${sk.character_class}</span>
+    </p>
+    <p class="text-sm text-gray-300 mb-1">${sk.appearance}</p>
+    <p class="text-sm text-gray-300 mb-1">${sk.personality}</p>
+    ${sk.motivation ? `<p class="text-xs text-gray-500 italic mt-1">${sk.motivation}</p>` : ''}
+  `;
+  container.appendChild(skPanel);
+
+  // Stock
+  const regular = shop.items.filter(i => !i.is_under_table);
+  const under = shop.items.filter(i => i.is_under_table);
+
+  if (regular.length) {
+    const stockPanel = el('div', 'panel');
+    stockPanel.innerHTML = `<div class="section-header">Stock</div>`;
+    const list = el('div', 'space-y-2');
+    regular.forEach(item => list.appendChild(_shopItemCard(item, shop.items.indexOf(item))));
+    stockPanel.appendChild(list);
+    container.appendChild(stockPanel);
+  }
+
+  if (under.length) {
+    const utPanel = el('div', 'panel');
+    utPanel.innerHTML = `
+      <div class="section-header" style="color:#f87171">Under the Table</div>
+      <p class="text-xs text-gray-500 mb-3 italic">Not openly displayed. The shopkeeper may deny having these.</p>
+    `;
+    const list = el('div', 'space-y-2');
+    under.forEach(item => list.appendChild(_shopItemCard(item, shop.items.indexOf(item))));
+    utPanel.appendChild(list);
+    container.appendChild(utPanel);
+  }
+}
+
+function _shopItemCard(item, globalIdx) {
+  const color = RARITY_COLORS[item.rarity] || '#9d9d9d';
+  const price = item.price_gp != null ? `${item.price_gp.toLocaleString()} gp` : '—';
+  const card = el('div', 'panel py-2 px-3 flex items-start gap-3');
+  card.innerHTML = `
+    <div class="flex-1 min-w-0">
+      <div class="flex flex-wrap items-center gap-1.5 mb-0.5">
+        <span class="text-sm font-bold text-parchment">${item.name}</span>
+        <span class="source-tag text-xs" style="color:${color};border-color:${color}">${item.rarity}</span>
+        <span class="source-tag text-xs">${item.item_type}</span>
+        <span class="text-xs text-gold">${price}</span>
+      </div>
+      <p class="text-xs text-gray-400">${item.description}</p>
+    </div>
+    <button onclick="useShopItemAsPrompt(${globalIdx})" class="flex-shrink-0 btn-secondary text-xs py-1 px-2 flex items-center gap-1" title="Generate full item">
+      <i class="fa-solid fa-flask-vial"></i> Generate
+    </button>
+  `;
+  return card;
+}
+
+// -----------------------------------------------------------------------
+// Shop Generator
+// -----------------------------------------------------------------------
+
+let currentShop = null;
+let currentShopHistoryId = null;
+let shopSelectedRarities = new Set(['Common', 'Uncommon']);
+let shopDetailLevel = 'medium';
+
+function _shopRarityStyle(rarity, active) {
+  const color = RARITY_COLORS[rarity] || '#9d9d9d';
+  const btn = document.getElementById(`shopRarity${rarity}`);
+  if (!btn) return;
+  btn.style.color = active ? color : '#8a7560';
+  btn.style.borderColor = active ? color : '#5a3e28';
+  btn.style.background = active ? `${color}18` : 'transparent';
+}
+
+function toggleShopRarity(rarity) {
+  if (shopSelectedRarities.has(rarity)) {
+    if (shopSelectedRarities.size === 1) return; // always keep at least one
+    shopSelectedRarities.delete(rarity);
+  } else {
+    shopSelectedRarities.add(rarity);
+  }
+  _shopRarityStyle(rarity, shopSelectedRarities.has(rarity));
+}
+
+function setShopDetail(level) {
+  shopDetailLevel = level;
+  ['low', 'medium', 'high'].forEach(d => {
+    const btn = document.getElementById(`shopDetail-${d}`);
+    btn.className = d === level
+      ? 'flex-1 btn-primary text-xs py-2'
+      : 'flex-1 btn-secondary text-xs py-2';
+  });
+}
+
+function _initShopRarityToggles() {
+  for (const r of ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary']) {
+    _shopRarityStyle(r, shopSelectedRarities.has(r));
+  }
+}
+
+async function generateShop() {
+  setBusy('generateShopBtn', 'generateShopSpinner', 'generateShopBtnText', true, 'Generating…');
+  document.getElementById('shopSheet').classList.add('hidden');
+  document.getElementById('shopPlaceholder').classList.remove('hidden');
+  document.getElementById('shopTokenUsage').classList.add('hidden');
+
+  try {
+    const body = {
+      shop_type: document.getElementById('shopType').value,
+      category: document.getElementById('shopCategory').value,
+      item_count: parseInt(document.getElementById('shopItemCount').value) || 8,
+      under_table: document.getElementById('shopUnderTable').checked,
+      rarities: [...shopSelectedRarities],
+      detail_level: shopDetailLevel,
+      additional_notes: document.getElementById('shopNotes').value.trim(),
+    };
+
+    const r = await fetch('/api/generate-shop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || 'Generation failed');
+    }
+
+    const data = await r.json();
+    currentShop = data.shop;
+    currentShopHistoryId = data.history_id ?? null;
+
+    document.getElementById('shopPlaceholder').classList.add('hidden');
+    document.getElementById('shopSheet').classList.remove('hidden');
+    renderShopSheet(currentShop);
+    _showTokenUsage(data.usage, 'shopTokenUsage');
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+  } finally {
+    setBusy('generateShopBtn', 'generateShopSpinner', 'generateShopBtnText', false, 'Generate Shop');
+  }
+}
+
+function renderShopSheet(shop) {
+  // Reset save state
+  document.getElementById('shopSaveResult').classList.add('hidden');
+  document.getElementById('shopDocmostLink').classList.add('hidden');
+  document.getElementById('saveShopBtnText').textContent = 'Save to Docmost';
+  document.getElementById('shopMeta').textContent =
+    `${shop.category} · ${shop.shop_type} · ${shop.items.length} items · Run by ${shop.shopkeeper.name}`;
+
+  // Remove any previously rendered content (keep the save bar and save result divs)
+  const container = document.getElementById('shopSheet');
+  while (container.children.length > 2) container.removeChild(container.lastChild);
+
+  // Render shop content directly into shopSheet — _renderShopContent appends to it
+  _renderShopContent(shop, container);
+}
+
+async function saveShop() {
+  if (!currentShop) return;
+  setBusy('saveShopBtn', 'saveShopSpinner', 'saveShopBtnText', true, 'Saving…');
+  const resultEl = document.getElementById('shopSaveResult');
+  resultEl.classList.add('hidden');
+
+  try {
+    const r = await fetch('/api/save-shop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shop: currentShop, history_id: currentShopHistoryId }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Save failed');
+
+    const entry = historyEntries.find(e => e.id === currentShopHistoryId);
+    if (entry) {
+      entry.docmost_page_id = data.page_id;
+      entry.docmost_url = data.docmost_url;
+    }
+
+    resultEl.textContent = `✓ Saved to Locations / Shops`;
+    resultEl.className = 'text-xs text-center py-1 text-green-400';
+    resultEl.classList.remove('hidden');
+
+    const link = document.getElementById('shopDocmostLink');
+    if (data.docmost_url) {
+      link.href = data.docmost_url;
+      link.classList.remove('hidden');
+    }
+  } catch (e) {
+    resultEl.textContent = `✗ ${e.message}`;
+    resultEl.className = 'text-xs text-center py-1 text-red-400';
+    resultEl.classList.remove('hidden');
+  } finally {
+    setBusy('saveShopBtn', 'saveShopSpinner', 'saveShopBtnText', false, 'Save to Docmost');
+  }
+}
+
+function useShopItemAsPrompt(itemIndex) {
+  const item = currentShop?.items[itemIndex];
+  if (!item) return;
+  openGenModal('item', item);
+}
+
+function useShopkeeperAsPrompt() {
+  const sk = currentShop?.shopkeeper;
+  if (!sk) return;
+  openGenModal('npc', sk);
+}
+
+// -----------------------------------------------------------------------
+// Generation modal (launched from Shop view)
+// -----------------------------------------------------------------------
+
+let _modalMode = null;
+let _modalGeneratedItem = null;
+let _modalGeneratedItemHistoryId = null;
+let _modalGeneratedChar = null;
+let _modalGeneratedCharHistoryId = null;
+
+function openGenModal(mode, data) {
+  _modalMode = mode;
+  _modalGeneratedItem = null;
+  _modalGeneratedChar = null;
+  _modalGeneratedItemHistoryId = null;
+  _modalGeneratedCharHistoryId = null;
+
+  document.getElementById('genModalResult').classList.add('hidden');
+  document.getElementById('genModalResult').innerHTML = '';
+  document.getElementById('genModalTokenUsage').classList.add('hidden');
+  document.getElementById('genModalSaveBtn').classList.add('hidden');
+  document.getElementById('genModalSaveResult').textContent = '';
+  document.getElementById('genModalGenerateBtnText').textContent = 'Generate';
+
+  if (mode === 'item') {
+    document.getElementById('genModalTitle').textContent = `Generate Item — ${data.name}`;
+    document.getElementById('genModalItemForm').classList.remove('hidden');
+    document.getElementById('genModalNpcForm').classList.add('hidden');
+    document.getElementById('genModalItemConcept').value = data.concept || data.name;
+    document.getElementById('genModalItemType').value = data.item_type;
+    document.getElementById('genModalItemRarity').value = data.rarity;
+  } else {
+    document.getElementById('genModalTitle').textContent = `Generate NPC — ${data.name}`;
+    document.getElementById('genModalNpcForm').classList.remove('hidden');
+    document.getElementById('genModalItemForm').classList.add('hidden');
+    document.getElementById('genModalNpcConcept').value = data.concept || data.name;
+    document.getElementById('genModalNpcRace').value = data.race || '';
+    const cls = document.getElementById('genModalNpcClass');
+    const match = [...cls.options].find(o => o.value.toLowerCase() === (data.character_class || '').toLowerCase());
+    cls.value = match ? match.value : 'Commoner';
+  }
+
+  document.getElementById('genModal').classList.remove('hidden');
+}
+
+function closeGenModal() {
+  document.getElementById('genModal').classList.add('hidden');
+}
+
+async function runModalGeneration() {
+  const genBtn = document.getElementById('genModalGenerateBtn');
+  const spinner = document.getElementById('genModalSpinner');
+  const btnText = document.getElementById('genModalGenerateBtnText');
+  genBtn.disabled = true;
+  spinner.classList.remove('hidden');
+  btnText.textContent = 'Generating…';
+  document.getElementById('genModalSaveBtn').classList.add('hidden');
+  document.getElementById('genModalSaveResult').textContent = '';
+  document.getElementById('genModalTokenUsage').classList.add('hidden');
+
+  const resultEl = document.getElementById('genModalResult');
+  resultEl.innerHTML = '';
+
+  try {
+    if (_modalMode === 'item') {
+      const concept = document.getElementById('genModalItemConcept').value.trim();
+      const itemType = document.getElementById('genModalItemType').value.trim();
+      if (!concept || !itemType) { alert('Concept and Item Type are required.'); return; }
+
+      const body = {
+        concept,
+        item_type: itemType,
+        rarity: document.getElementById('genModalItemRarity').value,
+        target_level_min: parseInt(document.getElementById('genModalItemLevelMin').value),
+        target_level_max: parseInt(document.getElementById('genModalItemLevelMax').value),
+        additional_notes: '',
+        magic_theme: '', material: '', stat_bonus_target: '', damage_type: '',
+        attunement: 'auto',
+      };
+
+      const r = await fetch('/api/generate-item', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Generation failed'); }
+      const data = await r.json();
+      _modalGeneratedItem = data.item;
+      _modalGeneratedItemHistoryId = data.history_id ?? null;
+
+      resultEl.classList.remove('hidden');
+      renderItemSheet(data.item, resultEl);
+      _showTokenUsage(data.usage, 'genModalTokenUsage');
+      document.getElementById('genModalSaveBtn').classList.remove('hidden');
+
+    } else {
+      const concept = document.getElementById('genModalNpcConcept').value.trim();
+      const race = document.getElementById('genModalNpcRace').value.trim();
+      if (!concept || !race) { alert('Concept and Race are required.'); return; }
+
+      const body = {
+        concept,
+        race,
+        character_class: document.getElementById('genModalNpcClass').value,
+        level: parseInt(document.getElementById('genModalNpcLevel').value),
+        alignment: document.getElementById('genModalNpcAlignment').value,
+        appearance: '',
+        background_detail: 'short',
+        additional_notes: '',
+        generic_npc: document.getElementById('genModalNpcGeneric').checked,
+      };
+
+      const r = await fetch('/api/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Generation failed'); }
+      const data = await r.json();
+      _modalGeneratedChar = data.character;
+      _modalGeneratedCharHistoryId = data.history_id ?? null;
+
+      resultEl.classList.remove('hidden');
+      renderSheet(data.character, resultEl);
+      _showTokenUsage(data.usage, 'genModalTokenUsage');
+      document.getElementById('genModalSaveBtn').classList.remove('hidden');
+    }
+  } catch (e) {
+    resultEl.classList.remove('hidden');
+    resultEl.innerHTML = `<p class="text-red-400 text-sm">${e.message}</p>`;
+  } finally {
+    genBtn.disabled = false;
+    spinner.classList.add('hidden');
+    btnText.textContent = 'Regenerate';
+  }
+}
+
+async function saveModalResult() {
+  const saveBtn = document.getElementById('genModalSaveBtn');
+  const spinner = document.getElementById('genModalSaveSpinner');
+  const btnText = document.getElementById('genModalSaveBtnText');
+  const resultEl = document.getElementById('genModalSaveResult');
+  saveBtn.disabled = true;
+  spinner.classList.remove('hidden');
+  btnText.textContent = 'Saving…';
+  resultEl.textContent = '';
+
+  try {
+    if (_modalMode === 'item' && _modalGeneratedItem) {
+      const r = await fetch('/api/save-item', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item: _modalGeneratedItem, history_id: _modalGeneratedItemHistoryId }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Save failed');
+      resultEl.textContent = `✓ Saved to Items / ${_modalGeneratedItem.item_type}`;
+      resultEl.className = 'text-xs text-green-400';
+    } else if (_modalMode === 'npc' && _modalGeneratedChar) {
+      const r = await fetch('/api/save', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ character: _modalGeneratedChar, folder: 'npcs', history_id: _modalGeneratedCharHistoryId }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Save failed');
+      resultEl.textContent = `✓ Saved to Docmost`;
+      resultEl.className = 'text-xs text-green-400';
+    }
+  } catch (e) {
+    resultEl.textContent = `✗ ${e.message}`;
+    resultEl.className = 'text-xs text-red-400';
+  } finally {
+    saveBtn.disabled = false;
+    spinner.classList.add('hidden');
+    btnText.textContent = 'Save to Docmost';
+  }
+}
+
 // Init
 loadConfig();
+_initShopRarityToggles();

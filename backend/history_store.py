@@ -8,7 +8,7 @@ from pathlib import Path
 HISTORY_DIR = Path(__file__).parent.parent / "history"
 
 # Keys containing full generated data blobs — stripped from list view for lightweight responses
-_DATA_KEYS = {"character", "item"}
+_DATA_KEYS = {"character", "item", "shop"}
 
 
 def _ensure_dir() -> None:

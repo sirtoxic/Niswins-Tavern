@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -109,14 +110,15 @@
   <!-- Header -->
   <header class="border-b border-border px-6 py-4 flex items-center justify-between">
     <div>
-      <h1 class="text-gold text-2xl font-bold tracking-wide">⚔ Niswins Tavern</h1>
+      <h1 class="text-gold text-2xl font-bold tracking-wide"><i class="fa-solid fa-beer-mug-empty mr-2"></i>Niswins Tavern</h1>
       <p class="text-xs text-gray-500">Tavern Tools</p>
     </div>
     <nav class="flex gap-1">
-      <button id="navForge" onclick="switchView('forge')" class="nav-btn nav-active">🧑 NPCs</button>
-      <button id="navItems" onclick="switchView('items')" class="nav-btn">⚗ Items</button>
-      <button id="navHistory" onclick="switchView('history')" class="nav-btn">📜 History</button>
-      <button id="navSettings" onclick="switchView('settings')" class="nav-btn">⚙ Settings</button>
+      <button id="navForge" onclick="switchView('forge')" class="nav-btn nav-active"><i class="fa-solid fa-users mr-1"></i>NPCs</button>
+      <button id="navItems" onclick="switchView('items')" class="nav-btn"><i class="fa-solid fa-flask-vial mr-1"></i>Items</button>
+      <button id="navShops" onclick="switchView('shops')" class="nav-btn"><i class="fa-solid fa-store mr-1"></i>Shops</button>
+      <button id="navHistory" onclick="switchView('history')" class="nav-btn"><i class="fa-solid fa-scroll mr-1"></i>History</button>
+      <button id="navSettings" onclick="switchView('settings')" class="nav-btn"><i class="fa-solid fa-gear mr-1"></i>Settings</button>
     </nav>
   </header>
 
@@ -240,10 +242,10 @@
         <div class="section-header mt-3">Export</div>
         <div class="grid grid-cols-2 gap-2">
           <button onclick="exportToPDF()" class="btn-secondary text-xs py-2 flex items-center justify-center gap-1">
-            <span>📄</span> PDF
+            <i class="fa-solid fa-file-pdf"></i> PDF
           </button>
           <button onclick="exportToFoundryJSON()" class="btn-secondary text-xs py-2 flex items-center justify-center gap-1">
-            <span>🎲</span> Foundry VTT
+            <i class="fa-solid fa-dice-d20"></i> Foundry VTT
           </button>
         </div>
       </div>
@@ -253,7 +255,7 @@
     <main class="flex-1 overflow-y-auto p-6" id="sheetContainer">
       <div id="placeholder" class="h-full flex items-center justify-center text-gray-600">
         <div class="text-center">
-          <div class="text-6xl mb-4">⚔</div>
+          <div class="text-6xl mb-4"><i class="fa-solid fa-users"></i></div>
           <p class="text-lg">Fill in the form and generate a character</p>
           <p class="text-sm mt-1">The stat block will appear here</p>
         </div>
@@ -411,7 +413,7 @@
 
         <div class="section-header mt-3">Export</div>
         <button onclick="exportItemToPDF()" class="btn-secondary text-xs py-2 w-full flex items-center justify-center gap-1">
-          <span>📄</span> PDF
+          <i class="fa-solid fa-file-pdf"></i> PDF
         </button>
       </div>
     </aside>
@@ -420,7 +422,7 @@
     <main class="flex-1 overflow-y-auto p-6">
       <div id="itemPlaceholder" class="h-full flex items-center justify-center text-gray-600">
         <div class="text-center">
-          <div class="text-6xl mb-4">⚗</div>
+          <div class="text-6xl mb-4"><i class="fa-solid fa-flask-vial"></i></div>
           <p class="text-lg">Fill in the form and generate an item</p>
           <p class="text-sm mt-1">The item card will appear here</p>
         </div>
@@ -430,6 +432,125 @@
 
   </div><!-- /viewItems -->
 
+  <!-- Shops View -->
+  <div id="viewShops" class="hidden flex h-[calc(100vh-73px)]">
+
+    <!-- Left panel: form -->
+    <aside class="w-80 flex-shrink-0 border-r border-border overflow-y-auto p-4 space-y-4">
+      <div class="section-header">Shop Generator</div>
+
+      <div class="space-y-3">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Shop Type</label>
+            <select id="shopType" class="input-field text-sm">
+              <option value="building">Building</option>
+              <option value="cart">Cart</option>
+              <option value="tent">Tent</option>
+              <option value="stall">Stall</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Item Count</label>
+            <input id="shopItemCount" type="number" min="1" max="20" value="8" class="input-field text-sm" />
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Category</label>
+          <select id="shopCategory" class="input-field text-sm">
+            <option value="General">General</option>
+            <option value="Alchemy">Alchemy</option>
+            <option value="Armory">Armory</option>
+            <option value="Blacksmith">Blacksmith</option>
+            <option value="Clothing &amp; Tailoring">Clothing &amp; Tailoring</option>
+            <option value="Food &amp; Provisions">Food &amp; Provisions</option>
+            <option value="Jewellery">Jewellery</option>
+            <option value="Magic Items">Magic Items</option>
+            <option value="Books &amp; Scrolls">Books &amp; Scrolls</option>
+            <option value="Tavern &amp; Inn">Tavern &amp; Inn</option>
+            <option value="Black Market">Black Market</option>
+            <option value="Exotic Goods">Exotic Goods</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Item Rarities</label>
+          <div id="shopRarityToggles" class="flex flex-wrap gap-1">
+            <button id="shopRarityCommon"    onclick="toggleShopRarity('Common')"    class="text-xs px-2 py-0.5 rounded border transition-colors cursor-pointer">Common</button>
+            <button id="shopRarityUncommon"  onclick="toggleShopRarity('Uncommon')"  class="text-xs px-2 py-0.5 rounded border transition-colors cursor-pointer">Uncommon</button>
+            <button id="shopRarityRare"      onclick="toggleShopRarity('Rare')"      class="text-xs px-2 py-0.5 rounded border transition-colors cursor-pointer">Rare</button>
+            <button id="shopRarityEpic"      onclick="toggleShopRarity('Epic')"      class="text-xs px-2 py-0.5 rounded border transition-colors cursor-pointer">Epic</button>
+            <button id="shopRarityLegendary" onclick="toggleShopRarity('Legendary')" class="text-xs px-2 py-0.5 rounded border transition-colors cursor-pointer">Legendary</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Description Detail</label>
+          <div class="flex gap-1">
+            <button onclick="setShopDetail('low')"    id="shopDetail-low"    class="flex-1 btn-secondary text-xs py-2">Low</button>
+            <button onclick="setShopDetail('medium')" id="shopDetail-medium" class="flex-1 btn-primary  text-xs py-2">Medium</button>
+            <button onclick="setShopDetail('high')"   id="shopDetail-high"   class="flex-1 btn-secondary text-xs py-2">High</button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 py-1">
+          <input id="shopUnderTable" type="checkbox" class="w-4 h-4 accent-gold cursor-pointer" />
+          <label for="shopUnderTable" class="text-sm text-gray-300 cursor-pointer">Include under-the-table items</label>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
+          <textarea id="shopNotes" rows="2" placeholder="e.g. Located in a seedy dockside district, run by a secretive mage…" class="input-field resize-none text-sm"></textarea>
+        </div>
+
+        <button id="generateShopBtn" onclick="generateShop()" class="btn-primary w-full flex items-center justify-center gap-2">
+          <svg id="generateShopSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span id="generateShopBtnText">Generate Shop</span>
+        </button>
+        <div id="shopTokenUsage" class="hidden flex items-center justify-center gap-1.5 text-xs text-gray-500 pt-1"></div>
+      </div>
+    </aside>
+
+    <!-- Right panel: generated content -->
+    <main class="flex-1 overflow-y-auto p-6">
+      <div id="shopPlaceholder" class="h-full flex items-center justify-center text-gray-600">
+        <div class="text-center">
+          <div class="text-6xl mb-4"><i class="fa-solid fa-store"></i></div>
+          <p class="text-lg">Fill in the form and generate a shop</p>
+          <p class="text-sm mt-1">The shop details will appear here</p>
+        </div>
+      </div>
+
+      <div id="shopSheet" class="hidden space-y-4">
+
+        <!-- Save bar -->
+        <div class="panel flex flex-wrap items-center justify-between gap-3">
+          <div id="shopMeta" class="text-xs text-gray-500"></div>
+          <div class="flex gap-2 items-center">
+            <button onclick="saveShop()" id="saveShopBtn" class="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5">
+              <svg id="saveShopSpinner" class="hidden spinner w-3 h-3" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+              <span id="saveShopBtnText">Save to Docmost</span>
+            </button>
+            <a id="shopDocmostLink" class="hidden btn-secondary text-xs py-1.5 px-3" href="#" target="_blank" rel="noopener" style="text-decoration:none">View in Docmost →</a>
+          </div>
+        </div>
+        <div id="shopSaveResult" class="hidden text-xs text-center py-1"></div>
+
+        <!-- Generated content injected here by _renderShopContent -->
+
+      </div>
+    </main>
+
+  </div><!-- /viewShops -->
+
   <!-- History View -->
   <div id="viewHistory" class="hidden flex h-[calc(100vh-73px)]">
 
@@ -437,7 +558,7 @@
     <div id="historyListPanel" class="w-72 flex-shrink-0 border-r border-border overflow-y-auto p-4">
       <div class="flex items-center justify-between mb-2">
         <div class="section-header" style="margin-bottom:0;border:none">Generation History</div>
-        <button onclick="loadHistoryList()" class="text-gray-600 hover:text-gold text-xs transition-colors">↻ Refresh</button>
+        <button onclick="loadHistoryList()" class="text-gray-600 hover:text-gold text-xs transition-colors"><i class="fa-solid fa-rotate"></i></button>
       </div>
       <div class="mb-3 space-y-2">
         <input id="historySearch" type="text" placeholder="Search by name…" class="input-field text-xs" oninput="filterHistory()" />
@@ -452,7 +573,7 @@
     <main class="flex-1 overflow-y-auto p-6">
       <div id="historyPlaceholder" class="h-full flex items-center justify-center text-gray-600">
         <div class="text-center">
-          <div class="text-6xl mb-4">📜</div>
+          <div class="text-6xl mb-4"><i class="fa-solid fa-scroll"></i></div>
           <p class="text-lg">Select an entry to view it</p>
         </div>
       </div>
@@ -463,8 +584,8 @@
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div id="historyEntryMeta" class="text-xs text-gray-500 leading-relaxed"></div>
             <div class="flex flex-wrap gap-2 items-center">
-              <button onclick="exportToPDF()" class="btn-secondary text-xs py-1.5 px-3">📄 PDF</button>
-              <button id="historyFoundryBtn" onclick="exportToFoundryJSON()" class="btn-secondary text-xs py-1.5 px-3">🎲 Foundry</button>
+              <button onclick="exportToPDF()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-file-pdf mr-1"></i>PDF</button>
+              <button id="historyFoundryBtn" onclick="exportToFoundryJSON()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-dice-d20 mr-1"></i>Foundry</button>
               <a id="historyDocmostLink" class="hidden btn-secondary text-xs py-1.5 px-3" href="#" target="_blank" rel="noopener" style="text-decoration:none">View in Docmost →</a>
             </div>
           </div>
@@ -606,6 +727,142 @@
 
     </div>
   </div><!-- /viewSettings -->
+
+  <!-- Generation Modal (used from Shop view) -->
+  <div id="genModal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.75)" onclick="if(event.target===this)closeGenModal()">
+    <div class="flex flex-col rounded-lg border border-border" style="background:#1a1209;width:min(720px,95vw);max-height:90vh">
+
+      <!-- Modal header -->
+      <div class="flex items-center justify-between px-5 py-3 border-b border-border flex-shrink-0">
+        <h3 id="genModalTitle" class="text-gold font-bold text-lg"></h3>
+        <button onclick="closeGenModal()" class="text-gray-500 hover:text-parchment text-xl leading-none"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <!-- Modal body -->
+      <div class="overflow-y-auto flex-1 p-5 space-y-4">
+
+        <!-- Item form -->
+        <div id="genModalItemForm" class="hidden space-y-3">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Concept</label>
+            <textarea id="genModalItemConcept" rows="3" class="input-field resize-none text-sm w-full"></textarea>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Item Type</label>
+              <input id="genModalItemType" type="text" class="input-field text-sm w-full" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Rarity</label>
+              <select id="genModalItemRarity" class="input-field text-sm w-full">
+                <option value="Common">Common</option>
+                <option value="Uncommon" selected>Uncommon</option>
+                <option value="Rare">Rare</option>
+                <option value="Epic">Epic</option>
+                <option value="Legendary">Legendary</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Min Level</label>
+              <input id="genModalItemLevelMin" type="number" min="1" max="20" value="1" class="input-field text-sm w-full" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Max Level</label>
+              <input id="genModalItemLevelMax" type="number" min="1" max="20" value="5" class="input-field text-sm w-full" />
+            </div>
+          </div>
+        </div>
+
+        <!-- NPC form -->
+        <div id="genModalNpcForm" class="hidden space-y-3">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Concept</label>
+            <textarea id="genModalNpcConcept" rows="3" class="input-field resize-none text-sm w-full"></textarea>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Race</label>
+              <input id="genModalNpcRace" type="text" class="input-field text-sm w-full" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Class</label>
+              <select id="genModalNpcClass" class="input-field text-sm w-full">
+                <option value="Commoner">Commoner</option>
+                <option value="Artificer">Artificer</option>
+                <option value="Barbarian">Barbarian</option>
+                <option value="Bard">Bard</option>
+                <option value="Cleric">Cleric</option>
+                <option value="Druid">Druid</option>
+                <option value="Fighter">Fighter</option>
+                <option value="Monk">Monk</option>
+                <option value="Paladin">Paladin</option>
+                <option value="Ranger">Ranger</option>
+                <option value="Rogue">Rogue</option>
+                <option value="Sorcerer">Sorcerer</option>
+                <option value="Warlock">Warlock</option>
+                <option value="Wizard">Wizard</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Level</label>
+              <input id="genModalNpcLevel" type="number" min="1" max="20" value="1" class="input-field text-sm w-full" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Alignment</label>
+              <select id="genModalNpcAlignment" class="input-field text-sm w-full">
+                <option value="Any">Any</option>
+                <option value="Lawful Good">Lawful Good</option>
+                <option value="Neutral Good">Neutral Good</option>
+                <option value="Chaotic Good">Chaotic Good</option>
+                <option value="Lawful Neutral">Lawful Neutral</option>
+                <option value="True Neutral">True Neutral</option>
+                <option value="Chaotic Neutral">Chaotic Neutral</option>
+                <option value="Lawful Evil">Lawful Evil</option>
+                <option value="Neutral Evil">Neutral Evil</option>
+                <option value="Chaotic Evil">Chaotic Evil</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <input id="genModalNpcGeneric" type="checkbox" checked class="w-4 h-4 accent-gold cursor-pointer" />
+            <label for="genModalNpcGeneric" class="text-sm text-gray-300 cursor-pointer">Generic NPC (simplified sheet)</label>
+          </div>
+        </div>
+
+        <!-- Result area -->
+        <div id="genModalResult" class="hidden"></div>
+        <div id="genModalTokenUsage" class="hidden flex items-center justify-center gap-1.5 text-xs text-gray-500"></div>
+
+      </div>
+
+      <!-- Modal footer -->
+      <div class="flex items-center justify-between px-5 py-3 border-t border-border flex-shrink-0 gap-3">
+        <div id="genModalSaveResult" class="text-xs text-green-400"></div>
+        <div class="flex gap-2 flex-shrink-0">
+          <button id="genModalSaveBtn" onclick="saveModalResult()" class="hidden btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5">
+            <svg id="genModalSaveSpinner" class="hidden spinner w-3 h-3" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span id="genModalSaveBtnText">Save to Docmost</span>
+          </button>
+          <button id="genModalGenerateBtn" onclick="runModalGeneration()" class="btn-primary text-xs py-1.5 px-4 flex items-center gap-2">
+            <svg id="genModalSpinner" class="hidden spinner w-3 h-3" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span id="genModalGenerateBtnText">Generate</span>
+          </button>
+          <button onclick="closeGenModal()" class="btn-secondary text-xs py-1.5 px-3">Close</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

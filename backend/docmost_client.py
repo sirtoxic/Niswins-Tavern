@@ -23,7 +23,7 @@ import yaml
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
-from models import Character, Item
+from models import Character, Item, Shop
 
 _DEFAULT_FOLDER_NAMES: dict[str, str] = {
     "npcs": "NPCs",
@@ -549,6 +549,58 @@ class DocmostClient:
 
         return "\n".join(lines)
 
+    # ------------------------------------------------------------------
+    # Shop → Markdown
+    # ------------------------------------------------------------------
+
+    def _shop_to_markdown(self, shop: Shop) -> str:
+        lines = []
+
+        def h(level: int, text: str):
+            lines.append(f"{'#' * level} {text}\n")
+
+        h(1, shop.name)
+        lines.append(
+            f"**{shop.category}** · **{shop.shop_type.title()}**"
+            + (f"\n\n*{shop.atmosphere}*" if shop.atmosphere else "")
+            + "\n"
+        )
+
+        h(2, "About the Shop")
+        lines.append(shop.description + "\n")
+
+        h(2, "The Shopkeeper")
+        sk = shop.shopkeeper
+        gender_note = f" ({sk.gender})" if sk.gender else ""
+        lines.append(f"**{sk.name}** — {sk.race}{gender_note} {sk.character_class}\n")
+        lines.append(sk.appearance + "\n")
+        lines.append(sk.personality + "\n")
+        if sk.motivation:
+            lines.append(f"*{sk.motivation}*\n")
+
+        h(2, "Stock")
+
+        regular = [i for i in shop.items if not i.is_under_table]
+        under = [i for i in shop.items if i.is_under_table]
+
+        def _item_block(item):
+            rarity_str = item.rarity
+            price_str = f"{item.price_gp:,} gp" if item.price_gp is not None else "price varies"
+            h(3, item.name)
+            lines.append(f"**{item.item_type}** · {rarity_str} · {price_str}\n")
+            lines.append(item.description + "\n")
+
+        for item in regular:
+            _item_block(item)
+
+        if under:
+            h(2, "Under the Table")
+            lines.append("*These items are not openly displayed. The shopkeeper may deny having them.*\n")
+            for item in under:
+                _item_block(item)
+
+        return "\n".join(lines)
+
     def reload_config(self) -> None:
         """Re-read config.yaml and reset auth state so the next request re-authenticates."""
         cfg = _load_config()["docmost"]
@@ -597,4 +649,41 @@ class DocmostClient:
             logger.warning(f"Could not update item folder index: {e}")
 
         logger.info(f"Saved item '{item.name}' to Docmost (page {page_id}, url={page_url})")
+        return page_id, page_url
+
+    async def save_shop(self, shop: Shop) -> tuple[str, str]:
+        """Returns (page_id, page_url). Saves under Locations → Shops/."""
+        await self._ensure_auth()
+        await self._ensure_space()
+
+        locations_root_id = await self._get_root_folder_page_id("locations")
+        shops_folder_id = await self._get_or_create_folder_page(
+            self._space_id, "Shops", parent_page_id=locations_root_id
+        )
+
+        content = self._shop_to_markdown(shop)
+        page_data = await self._create_page(
+            space_id=self._space_id,
+            title=shop.name,
+            content=content,
+            parent_page_id=shops_folder_id,
+        )
+
+        page_id = page_data["id"]
+        page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
+        base = self.base_url
+        if base.endswith("/api"):
+            base = base[:-4]
+        page_url = f"{base}/s/{self._space_slug}/p/{page_slug}"
+
+        entry = (
+            f"- **{shop.name}** — {shop.category} {shop.shop_type}, "
+            f"{len(shop.items)} items, run by {shop.shopkeeper.name}\n"
+        )
+        try:
+            await self._append_to_page(shops_folder_id, entry)
+        except Exception as e:
+            logger.warning(f"Could not update shops index: {e}")
+
+        logger.info(f"Saved shop '{shop.name}' to Docmost (page {page_id}, url={page_url})")
         return page_id, page_url
