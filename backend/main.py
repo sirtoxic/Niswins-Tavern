@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv, dotenv_values, set_key
 
-from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, SettingsUpdate
+from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, SettingsUpdate, TestPageUrlRequest
 from character_generator import generate_character
 from item_generator import generate_item
 from docmost_client import DocmostClient
@@ -37,7 +37,7 @@ async def serve_index():
 async def get_config():
     cfg = _load_config()
     return {
-        "folders": cfg["docmost"]["folders"],
+        "folders": {"npcs": "NPCs", "bestiary": "Bestiary", "locations": "Locations", "encounters": "Encounters"},
         "docmost_url": cfg["docmost"]["url"],
     }
 
@@ -49,7 +49,7 @@ async def get_settings():
 
     cfg = _load_config()
     dcfg = cfg.get("docmost", {})
-    folders = dcfg.get("folders", {})
+    folder_urls = dcfg.get("folder_urls", {})
 
     return {
         "anthropic_api_key": api_key,
@@ -57,10 +57,11 @@ async def get_settings():
         "docmost_url": dcfg.get("url", ""),
         "docmost_username": dcfg.get("username", ""),
         "docmost_password": dcfg.get("password", ""),
-        "docmost_folder_npcs": folders.get("npcs", "NPCs"),
-        "docmost_folder_bestiary": folders.get("bestiary", "Bestiary"),
-        "docmost_folder_locations": folders.get("locations", "Locations"),
-        "docmost_folder_encounters": folders.get("encounters", "Encounters"),
+        "folder_url_npcs": folder_urls.get("npcs", ""),
+        "folder_url_bestiary": folder_urls.get("bestiary", ""),
+        "folder_url_locations": folder_urls.get("locations", ""),
+        "folder_url_encounters": folder_urls.get("encounters", ""),
+        "folder_url_items": folder_urls.get("items", ""),
     }
 
 
@@ -82,11 +83,12 @@ async def update_settings(req: SettingsUpdate):
             "url": req.docmost_url,
             "username": req.docmost_username,
             "password": req.docmost_password,
-            "folders": {
-                "npcs": req.docmost_folder_npcs,
-                "bestiary": req.docmost_folder_bestiary,
-                "locations": req.docmost_folder_locations,
-                "encounters": req.docmost_folder_encounters,
+            "folder_urls": {
+                "npcs": req.folder_url_npcs,
+                "bestiary": req.folder_url_bestiary,
+                "locations": req.folder_url_locations,
+                "encounters": req.folder_url_encounters,
+                "items": req.folder_url_items,
             },
         }
         cfg["claude"] = {"model": req.claude_model}
@@ -100,6 +102,15 @@ async def update_settings(req: SettingsUpdate):
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/test-page")
+async def test_page_url(req: TestPageUrlRequest):
+    try:
+        page_id, title = await docmost.resolve_page_url(req.url)
+        return {"success": True, "page_id": page_id, "title": title}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/generate")

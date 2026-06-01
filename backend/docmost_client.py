@@ -22,7 +22,16 @@ import httpx
 import yaml
 import logging
 from pathlib import Path
+from urllib.parse import urlparse
 from models import Character, Item
+
+_DEFAULT_FOLDER_NAMES: dict[str, str] = {
+    "npcs": "NPCs",
+    "bestiary": "Bestiary",
+    "locations": "Locations",
+    "encounters": "Encounters",
+    "items": "Items",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +69,10 @@ class DocmostClient:
         self.base_url = cfg["url"].rstrip("/")
         self.username = cfg["username"]
         self.password = cfg["password"]
-        self.folder_names: dict[str, str] = cfg["folders"]
+        # folder_urls: new format — values are Docmost page URLs (blank = auto-create)
+        self.folder_urls: dict[str, str] = cfg.get("folder_urls", {})
+        # _legacy_folder_names: old format — values are page titles to auto-create
+        self._legacy_folder_names: dict[str, str] = cfg.get("folders", {})
         self._token: str | None = None
         self._space_id: str | None = None
         self._space_slug: str | None = None
@@ -198,6 +210,82 @@ class DocmostClient:
         _save_persistent_folder_cache(self._folder_cache)
         logger.info(f"Created folder page: {title} ({folder_id})")
         return folder_id
+
+    # ------------------------------------------------------------------
+    # URL-based folder resolution
+    # ------------------------------------------------------------------
+
+    async def resolve_page_url(self, url: str) -> tuple[str, str]:
+        """Resolve a Docmost page URL to (page_id, page_title). Raises ValueError on failure.
+
+        URL format: {base}/s/{space_slug}/p/{page_slug}
+        Tries the full slug then the trailing identifier (slugId).
+        """
+        parsed = urlparse(url)
+        parts = [p for p in parsed.path.split("/") if p]
+        try:
+            p_idx = parts.index("p")
+            slug = parts[p_idx + 1]
+        except (ValueError, IndexError):
+            raise ValueError(f"Cannot parse page slug from URL: {url!r}")
+
+        await self._ensure_auth()
+
+        candidates = [slug]
+        if "-" in slug:
+            candidates.append(slug.rsplit("-", 1)[1])
+
+        async with httpx.AsyncClient() as client:
+            for candidate in candidates:
+                try:
+                    r = await client.get(
+                        f"{self.base_url}/pages/{candidate}",
+                        headers=self._headers(),
+                        timeout=10.0,
+                    )
+                    if r.status_code == 200:
+                        data = r.json().get("data", r.json())
+                        page_id = data.get("id")
+                        title = data.get("title", slug)
+                        if page_id:
+                            return page_id, title
+                except Exception:
+                    pass
+
+        raise ValueError(
+            f"Could not resolve Docmost page from URL: {url!r}\n"
+            "Check the URL is correct and your credentials have access to the page."
+        )
+
+    async def _get_root_folder_page_id(self, folder_key: str) -> str:
+        """Get the parent page ID for a folder key.
+
+        If a URL is configured, resolves and caches it.
+        Otherwise falls back to auto-creating a folder page.
+        """
+        url = self.folder_urls.get(folder_key, "").strip()
+
+        if url:
+            cache_key = f"url:{url}"
+            if cache_key in self._folder_cache:
+                cached_id = self._folder_cache[cache_key]
+                if await self._page_exists(cached_id):
+                    return cached_id
+                del self._folder_cache[cache_key]
+                _save_persistent_folder_cache(self._folder_cache)
+
+            page_id, title = await self.resolve_page_url(url)
+            self._folder_cache[cache_key] = page_id
+            _save_persistent_folder_cache(self._folder_cache)
+            logger.info(f"Resolved {folder_key!r} folder URL → page {page_id!r} ({title!r})")
+            return page_id
+
+        # No URL — auto-create with legacy name from config or default
+        title = (
+            self._legacy_folder_names.get(folder_key)
+            or _DEFAULT_FOLDER_NAMES.get(folder_key, folder_key.title())
+        )
+        return await self._get_or_create_folder_page(self._space_id, title)
 
     # ------------------------------------------------------------------
     # Character → Markdown
@@ -364,8 +452,7 @@ class DocmostClient:
         await self._ensure_auth()
         await self._ensure_space()
 
-        folder_name = self.folder_names.get(folder_key, "NPCs")
-        folder_page_id = await self._get_or_create_folder_page(self._space_id, folder_name)
+        folder_page_id = await self._get_root_folder_page_id(folder_key)
 
         content = self._character_to_markdown(char)
         page_data = await self._create_page(
@@ -460,7 +547,8 @@ class DocmostClient:
         self.base_url = cfg["url"].rstrip("/")
         self.username = cfg["username"]
         self.password = cfg["password"]
-        self.folder_names = cfg.get("folders", {})
+        self.folder_urls = cfg.get("folder_urls", {})
+        self._legacy_folder_names = cfg.get("folders", {})
         self._token = None
         self._space_id = None
         self._space_slug = None
@@ -471,7 +559,7 @@ class DocmostClient:
         await self._ensure_auth()
         await self._ensure_space()
 
-        items_root_id = await self._get_or_create_folder_page(self._space_id, "Items")
+        items_root_id = await self._get_root_folder_page_id("items")
         type_folder_id = await self._get_or_create_folder_page(
             self._space_id, item.item_type, parent_page_id=items_root_id
         )

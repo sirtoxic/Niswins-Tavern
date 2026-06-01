@@ -2,11 +2,14 @@ docmost:
   url: "https://your-docmost-instance.example.com/api"
   username: "your-docmost-email@example.com"
   password: "your-docmost-password"
-  folders:
-    npcs: "NPCs"
-    bestiary: "Bestiary"
-    locations: "Locations"
-    encounters: "Encounters"
+  # Paste full Docmost page URLs for each category.
+  # Leave blank to auto-create a folder page in the space root.
+  folder_urls:
+    npcs: ""
+    bestiary: ""
+    locations: ""
+    encounters: ""
+    items: ""
 
 claude:
   model: "claude-sonnet-4-6"

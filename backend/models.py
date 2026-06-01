@@ -273,7 +273,12 @@ class SettingsUpdate(BaseModel):
     docmost_url: str = ""
     docmost_username: str = ""
     docmost_password: str = ""
-    docmost_folder_npcs: str = "NPCs"
-    docmost_folder_bestiary: str = "Bestiary"
-    docmost_folder_locations: str = "Locations"
-    docmost_folder_encounters: str = "Encounters"
+    folder_url_npcs: str = ""
+    folder_url_bestiary: str = ""
+    folder_url_locations: str = ""
+    folder_url_encounters: str = ""
+    folder_url_items: str = ""
+
+
+class TestPageUrlRequest(BaseModel):
+    url: str

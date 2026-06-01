@@ -229,10 +229,15 @@ async function loadSettings() {
     document.getElementById('settingDocmostUrl').value = s.docmost_url || '';
     document.getElementById('settingDocmostUser').value = s.docmost_username || '';
     document.getElementById('settingDocmostPass').value = s.docmost_password || '';
-    document.getElementById('settingFolderNpcs').value = s.docmost_folder_npcs || '';
-    document.getElementById('settingFolderBestiary').value = s.docmost_folder_bestiary || '';
-    document.getElementById('settingFolderLocations').value = s.docmost_folder_locations || '';
-    document.getElementById('settingFolderEncounters').value = s.docmost_folder_encounters || '';
+    document.getElementById('settingFolderUrlNpcs').value = s.folder_url_npcs || '';
+    document.getElementById('settingFolderUrlBestiary').value = s.folder_url_bestiary || '';
+    document.getElementById('settingFolderUrlLocations').value = s.folder_url_locations || '';
+    document.getElementById('settingFolderUrlEncounters').value = s.folder_url_encounters || '';
+    document.getElementById('settingFolderUrlItems').value = s.folder_url_items || '';
+    // Clear any stale test results
+    for (const key of ['Npcs', 'Bestiary', 'Locations', 'Encounters', 'Items']) {
+      document.getElementById(`testResult${key}`).classList.add('hidden');
+    }
   } catch (e) {
     console.error('Could not load settings:', e);
   }
@@ -249,10 +254,11 @@ async function saveSettings() {
     docmost_url: document.getElementById('settingDocmostUrl').value.trim(),
     docmost_username: document.getElementById('settingDocmostUser').value.trim(),
     docmost_password: document.getElementById('settingDocmostPass').value,
-    docmost_folder_npcs: document.getElementById('settingFolderNpcs').value.trim(),
-    docmost_folder_bestiary: document.getElementById('settingFolderBestiary').value.trim(),
-    docmost_folder_locations: document.getElementById('settingFolderLocations').value.trim(),
-    docmost_folder_encounters: document.getElementById('settingFolderEncounters').value.trim(),
+    folder_url_npcs: document.getElementById('settingFolderUrlNpcs').value.trim(),
+    folder_url_bestiary: document.getElementById('settingFolderUrlBestiary').value.trim(),
+    folder_url_locations: document.getElementById('settingFolderUrlLocations').value.trim(),
+    folder_url_encounters: document.getElementById('settingFolderUrlEncounters').value.trim(),
+    folder_url_items: document.getElementById('settingFolderUrlItems').value.trim(),
   };
 
   try {
@@ -276,6 +282,38 @@ async function saveSettings() {
     resultEl.classList.remove('hidden');
   } finally {
     setBusy('settingsSaveBtn', 'settingsSaveSpinner', 'settingsSaveBtnText', false, 'Save Settings');
+  }
+}
+
+async function testPageUrl(key, inputId) {
+  const url = document.getElementById(inputId).value.trim();
+  const resultEl = document.getElementById(`testResult${key}`);
+  if (!url) {
+    resultEl.textContent = 'Enter a URL first.';
+    resultEl.className = 'text-xs mt-1 text-gray-500';
+    resultEl.classList.remove('hidden');
+    return;
+  }
+  resultEl.textContent = 'Testing…';
+  resultEl.className = 'text-xs mt-1 text-gray-500';
+  resultEl.classList.remove('hidden');
+  try {
+    const r = await fetch('/api/settings/test-page', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await r.json();
+    if (r.ok) {
+      resultEl.textContent = `✓ Found: "${data.title}"`;
+      resultEl.className = 'text-xs mt-1 text-green-400';
+    } else {
+      resultEl.textContent = `✗ ${data.detail || 'Not found'}`;
+      resultEl.className = 'text-xs mt-1 text-red-400';
+    }
+  } catch (e) {
+    resultEl.textContent = `✗ ${e.message}`;
+    resultEl.className = 'text-xs mt-1 text-red-400';
   }
 }
 

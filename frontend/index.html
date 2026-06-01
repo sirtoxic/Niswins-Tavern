@@ -533,25 +533,54 @@
       </div>
 
       <!-- Docmost Folders -->
-      <div class="panel space-y-3">
-        <div class="section-header">Docmost Character Folders</div>
-        <p class="text-xs text-gray-500">Page titles created in Docmost for each character category. Items always use <span class="text-gold">Items → [type]</span> and are not configurable here.</p>
-        <div class="grid grid-cols-2 gap-3">
+      <div class="panel space-y-4">
+        <div class="section-header">Docmost Parent Pages</div>
+        <p class="text-xs text-gray-500">Paste the full URL of an existing Docmost page to use as the parent for each category. Leave blank to auto-create a folder at the space root.</p>
+
+        <div class="space-y-3">
           <div>
             <label class="text-xs text-gray-400 block mb-1">NPCs</label>
-            <input id="settingFolderNpcs" type="text" class="input-field text-sm" />
+            <div class="flex gap-2">
+              <input id="settingFolderUrlNpcs" type="url" placeholder="https://wiki.example.com/s/…/p/…" class="input-field text-xs flex-1 font-mono" />
+              <button onclick="testPageUrl('Npcs', 'settingFolderUrlNpcs')" class="btn-secondary text-xs px-3 flex-shrink-0">Test</button>
+            </div>
+            <div id="testResultNpcs" class="hidden text-xs mt-1"></div>
           </div>
+
           <div>
             <label class="text-xs text-gray-400 block mb-1">Bestiary</label>
-            <input id="settingFolderBestiary" type="text" class="input-field text-sm" />
+            <div class="flex gap-2">
+              <input id="settingFolderUrlBestiary" type="url" placeholder="https://wiki.example.com/s/…/p/…" class="input-field text-xs flex-1 font-mono" />
+              <button onclick="testPageUrl('Bestiary', 'settingFolderUrlBestiary')" class="btn-secondary text-xs px-3 flex-shrink-0">Test</button>
+            </div>
+            <div id="testResultBestiary" class="hidden text-xs mt-1"></div>
           </div>
+
           <div>
             <label class="text-xs text-gray-400 block mb-1">Locations</label>
-            <input id="settingFolderLocations" type="text" class="input-field text-sm" />
+            <div class="flex gap-2">
+              <input id="settingFolderUrlLocations" type="url" placeholder="https://wiki.example.com/s/…/p/…" class="input-field text-xs flex-1 font-mono" />
+              <button onclick="testPageUrl('Locations', 'settingFolderUrlLocations')" class="btn-secondary text-xs px-3 flex-shrink-0">Test</button>
+            </div>
+            <div id="testResultLocations" class="hidden text-xs mt-1"></div>
           </div>
+
           <div>
             <label class="text-xs text-gray-400 block mb-1">Encounters</label>
-            <input id="settingFolderEncounters" type="text" class="input-field text-sm" />
+            <div class="flex gap-2">
+              <input id="settingFolderUrlEncounters" type="url" placeholder="https://wiki.example.com/s/…/p/…" class="input-field text-xs flex-1 font-mono" />
+              <button onclick="testPageUrl('Encounters', 'settingFolderUrlEncounters')" class="btn-secondary text-xs px-3 flex-shrink-0">Test</button>
+            </div>
+            <div id="testResultEncounters" class="hidden text-xs mt-1"></div>
+          </div>
+
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Items <span class="text-gray-600">(items are saved as sub-pages under this)</span></label>
+            <div class="flex gap-2">
+              <input id="settingFolderUrlItems" type="url" placeholder="https://wiki.example.com/s/…/p/…" class="input-field text-xs flex-1 font-mono" />
+              <button onclick="testPageUrl('Items', 'settingFolderUrlItems')" class="btn-secondary text-xs px-3 flex-shrink-0">Test</button>
+            </div>
+            <div id="testResultItems" class="hidden text-xs mt-1"></div>
           </div>
         </div>
       </div>
