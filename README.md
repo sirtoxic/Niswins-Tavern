@@ -1,4 +1,4 @@
-This is a little side project that i generated with AI dont expect updates or for it to be fully working. I only know enough code to be dangerous. One day this may be somthing cool.
+This is a little side project. I generated to test out how Claude code works eventually I might turn this into a real project but for now it is just me learning. Claude don't expect any updates to the software.
 
 # Niswins Tavern — Character Forge, Item Workshop & Shop Generator
 
