@@ -114,53 +114,44 @@ async def test_page_url(req: TestPageUrlRequest):
 
 
 @app.get("/api/settings/debug-page")
-async def debug_page_url(url: str):
-    """Returns raw Docmost API responses for each resolution strategy."""
+async def debug_page_url():
+    """Returns raw Docmost API responses — for diagnosing page resolution."""
     import httpx
-    from urllib.parse import urlparse
     results = []
     try:
         await docmost._ensure_auth()
         await docmost._ensure_space()
-        parsed = urlparse(url)
-        parts = [p for p in parsed.path.split("/") if p]
-        space_slug = page_slug = slug_id = None
-        try:
-            space_slug = parts[parts.index("s") + 1]
-            page_slug  = parts[parts.index("p") + 1]
-            slug_id    = page_slug.rsplit("-", 1)[1] if "-" in page_slug else page_slug
-        except (ValueError, IndexError):
-            pass
         space_id = docmost._space_id
-        results.append({"parsed": {
-            "space_slug": space_slug, "page_slug": page_slug,
-            "slug_id": slug_id, "space_id": space_id,
-        }})
 
         def is_json(r):
             ct = r.headers.get("content-type", "")
-            return "json" in ct or (r.text.strip().startswith("{") or r.text.strip().startswith("["))
+            return "json" in ct or r.text.strip()[:1] in ("{", "[")
 
         async with httpx.AsyncClient() as client:
             strategies = [
-                ("GET /pages/{slug_id}", "GET",
-                 f"{docmost.base_url}/pages/{slug_id}", {}),
-                ("GET /pages/{page_slug}", "GET",
-                 f"{docmost.base_url}/pages/{page_slug}", {}),
-                ("POST /pages/page-info {slug,space slug}", "POST",
-                 f"{docmost.base_url}/pages/page-info",
-                 {"json": {"slug": page_slug, "spaceSlug": space_slug}}),
-                ("POST /pages/page-info {pageSlug,spaceSlug}", "POST",
-                 f"{docmost.base_url}/pages/page-info",
-                 {"json": {"pageSlug": page_slug, "spaceSlug": space_slug}}),
-                ("POST /pages/list {spaceId}", "POST",
-                 f"{docmost.base_url}/pages/list",
+                ("POST /pages (base, spaceId body)", "POST",
+                 f"{docmost.base_url}/pages",
                  {"json": {"spaceId": space_id}}),
-                ("GET /pages/sidebar-pages?spaceId", "GET",
-                 f"{docmost.base_url}/pages/sidebar-pages",
-                 {"params": {"spaceId": space_id}}),
-                ("GET /spaces/{space_id}/pages", "GET",
-                 f"{docmost.base_url}/spaces/{space_id}/pages", {}),
+                ("POST /pages/query", "POST",
+                 f"{docmost.base_url}/pages/query",
+                 {"json": {"spaceId": space_id}}),
+                ("POST /pages/tree", "POST",
+                 f"{docmost.base_url}/pages/tree",
+                 {"json": {"spaceId": space_id}}),
+                ("POST /search", "POST",
+                 f"{docmost.base_url}/search",
+                 {"json": {"query": "npcs", "spaceId": space_id}}),
+                ("GET /search?q=npcs", "GET",
+                 f"{docmost.base_url}/search",
+                 {"params": {"q": "npcs", "spaceId": space_id}}),
+                ("POST /spaces/pages", "POST",
+                 f"{docmost.base_url}/spaces/pages",
+                 {"json": {"spaceId": space_id}}),
+                ("GET /spaces/{id}", "GET",
+                 f"{docmost.base_url}/spaces/{space_id}", {}),
+                ("POST /workspaces/pages", "POST",
+                 f"{docmost.base_url}/workspaces/pages",
+                 {"json": {"spaceId": space_id}}),
             ]
             for label, method, endpoint, kwargs in strategies:
                 try:
@@ -170,7 +161,7 @@ async def debug_page_url(url: str):
                         "strategy": label,
                         "status": r.status_code,
                         "is_json": is_json(r),
-                        "body": r.text[:300] if not is_json(r) else r.text[:600],
+                        "body": r.text[:600] if is_json(r) else "<html>",
                     })
                 except Exception as ex:
                     results.append({"strategy": label, "error": str(ex)})
