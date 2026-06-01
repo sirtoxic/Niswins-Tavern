@@ -101,7 +101,7 @@ function renderHistoryList() {
   const container = document.getElementById('historyEntriesList');
   if (historyEntries.length === 0) {
     container.innerHTML =
-      '<p class="text-xs text-gray-600 text-center pt-8">No generations yet.<br>Head to the Forge to create your first character.</p>';
+      '<p class="text-xs text-gray-600 text-center pt-8">No generations yet.<br>Head to NPCs or Items to get started.</p>';
     return;
   }
   container.innerHTML = '';
