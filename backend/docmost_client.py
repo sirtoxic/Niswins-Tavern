@@ -219,38 +219,59 @@ class DocmostClient:
         """Resolve a Docmost page URL to (page_id, page_title). Raises ValueError on failure.
 
         URL format: {base}/s/{space_slug}/p/{page_slug}
-        Tries the full slug then the trailing identifier (slugId).
+        Primary strategy: GET /pages/page-info?pageSlug=...&spaceSlug=...
+        Fallback: GET /pages/{id} in case the user pasted a UUID-based URL.
         """
         parsed = urlparse(url)
         parts = [p for p in parsed.path.split("/") if p]
+
+        # Extract space_slug and page_slug from path: s/{space_slug}/p/{page_slug}
         try:
+            s_idx = parts.index("s")
+            space_slug = parts[s_idx + 1]
             p_idx = parts.index("p")
-            slug = parts[p_idx + 1]
+            page_slug = parts[p_idx + 1]
         except (ValueError, IndexError):
-            raise ValueError(f"Cannot parse page slug from URL: {url!r}")
+            raise ValueError(
+                f"Cannot parse space/page slug from URL: {url!r}\n"
+                "Expected format: https://your-wiki/s/{space}/p/{page-slug}"
+            )
 
         await self._ensure_auth()
 
-        candidates = [slug]
-        if "-" in slug:
-            candidates.append(slug.rsplit("-", 1)[1])
-
         async with httpx.AsyncClient() as client:
-            for candidate in candidates:
-                try:
-                    r = await client.get(
-                        f"{self.base_url}/pages/{candidate}",
-                        headers=self._headers(),
-                        timeout=10.0,
-                    )
-                    if r.status_code == 200:
-                        data = r.json().get("data", r.json())
-                        page_id = data.get("id")
-                        title = data.get("title", slug)
-                        if page_id:
-                            return page_id, title
-                except Exception:
-                    pass
+            # Strategy 1: page-info endpoint (how the Docmost frontend loads pages by slug)
+            try:
+                r = await client.get(
+                    f"{self.base_url}/pages/page-info",
+                    params={"pageSlug": page_slug, "spaceSlug": space_slug},
+                    headers=self._headers(),
+                    timeout=10.0,
+                )
+                if r.status_code == 200:
+                    data = r.json().get("data", r.json())
+                    page_id = data.get("id")
+                    title = data.get("title", page_slug)
+                    if page_id:
+                        return page_id, title
+            except Exception:
+                pass
+
+            # Strategy 2: direct UUID lookup (in case someone pastes an older /page/{uuid} URL)
+            try:
+                r = await client.get(
+                    f"{self.base_url}/pages/{page_slug}",
+                    headers=self._headers(),
+                    timeout=10.0,
+                )
+                if r.status_code == 200:
+                    data = r.json().get("data", r.json())
+                    page_id = data.get("id")
+                    title = data.get("title", page_slug)
+                    if page_id:
+                        return page_id, title
+            except Exception:
+                pass
 
         raise ValueError(
             f"Could not resolve Docmost page from URL: {url!r}\n"
