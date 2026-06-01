@@ -598,6 +598,7 @@ async function saveFromHistory() {
       entry.docmost_page_id = data.page_id;
       entry.docmost_url = data.docmost_url;
       entry.docmost_synced_at = now;
+      entry.docmost_out_of_sync = false;
       renderHistoryList();
       _updateHistorySyncStatus(entry);
     }
@@ -626,14 +627,24 @@ async function saveFromHistory() {
 
 function _updateHistorySyncStatus(entry) {
   const hasSynced = !!entry.docmost_page_id;
+  const outOfSync = !!entry.docmost_out_of_sync;
   document.getElementById('historySaveRow').classList.toggle('hidden', hasSynced);
   document.getElementById('historySyncStatus').classList.toggle('hidden', !hasSynced);
   document.getElementById('historyResyncWarning').classList.add('hidden');
 
   if (hasSynced) {
     const ts = entry.docmost_synced_at || entry.timestamp;
-    document.getElementById('historySyncStatusText').textContent =
-      `Synced to Docmost · ${_formatTimestamp(ts)}`;
+    const icon = document.querySelector('#historySyncStatus i');
+    const text = document.getElementById('historySyncStatusText');
+    if (outOfSync) {
+      icon.className = 'fa-solid fa-circle-exclamation text-amber-400';
+      text.className = 'text-xs text-amber-400';
+      text.textContent = `Out of sync · edited since last save (synced ${_formatTimestamp(ts)})`;
+    } else {
+      icon.className = 'fa-solid fa-circle-check text-green-400';
+      text.className = 'text-xs text-green-400';
+      text.textContent = `Synced to Docmost · ${_formatTimestamp(ts)}`;
+    }
   }
 }
 
@@ -650,6 +661,370 @@ async function confirmResync() {
   // Temporarily show the save row so setBusy can target historySaveBtn/Spinner/BtnText
   document.getElementById('historySaveRow').classList.remove('hidden');
   await saveFromHistory();
+}
+
+// -----------------------------------------------------------------------
+// Edit mode
+// -----------------------------------------------------------------------
+
+function _escAttr(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+function _escHtml(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function _editField(id, label, value, type = 'text') {
+  const w = el('div');
+  w.innerHTML = `<label class="text-xs text-gray-400 block mb-1">${label}</label>
+    <input id="${id}" type="${type}" class="input-field text-sm w-full" value="${_escAttr(value)}" />`;
+  return w;
+}
+
+function _editTextarea(id, label, value, rows = 3) {
+  const w = el('div');
+  w.innerHTML = `<label class="text-xs text-gray-400 block mb-1">${label}</label>
+    <textarea id="${id}" class="input-field text-sm w-full" rows="${rows}">${_escHtml(value)}</textarea>`;
+  return w;
+}
+
+function _editSelect(id, label, options, selected) {
+  const w = el('div');
+  const opts = options.map(o => `<option value="${o}" ${o === selected ? 'selected' : ''}>${o}</option>`).join('');
+  w.innerHTML = `<label class="text-xs text-gray-400 block mb-1">${label}</label>
+    <select id="${id}" class="input-field text-sm w-full">${opts}</select>`;
+  return w;
+}
+
+function _sectionLabel(text) {
+  const d = el('div', 'text-xs text-gold uppercase font-bold mb-3');
+  d.textContent = text;
+  return d;
+}
+
+// ---- Character edit ----
+function _buildCharacterEditForm(c) {
+  const form = el('div', 'space-y-4');
+
+  const identity = el('div', 'panel space-y-3');
+  identity.appendChild(_sectionLabel('Identity'));
+  const idGrid = el('div', 'grid grid-cols-2 gap-3');
+  idGrid.appendChild(_editField('edit_name', 'Name', c.name));
+  idGrid.appendChild(_editField('edit_background', 'Background', c.background));
+  identity.appendChild(idGrid);
+  identity.appendChild(_editTextarea('edit_appearance', 'Appearance', c.appearance, 2));
+  form.appendChild(identity);
+
+  const pers = el('div', 'panel space-y-3');
+  pers.appendChild(_sectionLabel('Personality'));
+  pers.appendChild(_editTextarea('edit_personality_traits', 'Traits', c.personality_traits, 2));
+  pers.appendChild(_editTextarea('edit_ideals', 'Ideals', c.ideals, 2));
+  pers.appendChild(_editTextarea('edit_bonds', 'Bonds', c.bonds, 2));
+  pers.appendChild(_editTextarea('edit_flaws', 'Flaws', c.flaws, 2));
+  form.appendChild(pers);
+
+  const story = el('div', 'panel space-y-3');
+  story.appendChild(_sectionLabel('Backstory'));
+  story.appendChild(_editTextarea('edit_backstory', '', c.backstory, 6));
+  form.appendChild(story);
+
+  const eq = el('div', 'panel space-y-3');
+  eq.appendChild(_sectionLabel('Equipment'));
+  const hint = el('div', 'text-xs text-gray-600 -mt-1 mb-1', 'One item per line');
+  eq.appendChild(hint);
+  eq.appendChild(_editTextarea('edit_equipment', '', (c.equipment || []).join('\n'), 4));
+  form.appendChild(eq);
+
+  return form;
+}
+
+function _collectCharacterEdits() {
+  return {
+    name: document.getElementById('edit_name').value.trim(),
+    background: document.getElementById('edit_background').value.trim(),
+    appearance: document.getElementById('edit_appearance').value.trim(),
+    personality_traits: document.getElementById('edit_personality_traits').value.trim(),
+    ideals: document.getElementById('edit_ideals').value.trim(),
+    bonds: document.getElementById('edit_bonds').value.trim(),
+    flaws: document.getElementById('edit_flaws').value.trim(),
+    backstory: document.getElementById('edit_backstory').value.trim(),
+    equipment: document.getElementById('edit_equipment').value.split('\n').map(s => s.trim()).filter(Boolean),
+  };
+}
+
+// ---- Item edit ----
+function _makeBonusRow(stat, value) {
+  const row = el('div', 'flex items-center gap-2');
+  row.innerHTML = `
+    <input type="text" placeholder="Stat (e.g. Strength)" class="input-field text-xs edit-bonus-stat flex-1" value="${_escAttr(stat)}" />
+    <input type="number" class="input-field text-xs edit-bonus-val w-20" value="${_escAttr(value)}" />
+    <button class="text-red-500 hover:text-red-300 px-1 text-sm leading-none" onclick="this.parentElement.remove()">×</button>`;
+  return row;
+}
+
+function _makeAbilityRow(a) {
+  const row = el('div', 'panel py-2 px-3 space-y-2');
+  row.innerHTML = `
+    <div class="grid grid-cols-3 gap-2">
+      <input type="text" placeholder="Name" class="input-field text-xs edit-ability-name col-span-2" value="${_escAttr(a.name)}" />
+      <input type="text" placeholder="Usage (e.g. 1/day)" class="input-field text-xs edit-ability-usage" value="${_escAttr(a.usage)}" />
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="text" placeholder="Activation" class="input-field text-xs edit-ability-activation flex-1" value="${_escAttr(a.activation || 'Passive')}" />
+      <button class="text-red-500 hover:text-red-300 text-xs ml-auto" onclick="this.closest('.panel').remove()">Remove</button>
+    </div>
+    <textarea placeholder="Description" class="input-field text-xs w-full edit-ability-desc" rows="2">${_escHtml(a.description)}</textarea>`;
+  return row;
+}
+
+function _buildItemEditForm(item) {
+  const form = el('div', 'space-y-4');
+
+  const basics = el('div', 'panel space-y-3');
+  basics.appendChild(_sectionLabel('Basic Info'));
+  const r1 = el('div', 'grid grid-cols-3 gap-3');
+  r1.appendChild(_editField('edit_name', 'Name', item.name));
+  r1.appendChild(_editField('edit_item_type', 'Type', item.item_type));
+  r1.appendChild(_editSelect('edit_rarity', 'Rarity', ['Common','Uncommon','Rare','Epic','Legendary'], item.rarity));
+  basics.appendChild(r1);
+  const r2 = el('div', 'grid grid-cols-4 gap-3 items-end');
+  r2.appendChild(_editField('edit_weight_lbs', 'Weight (lb)', item.weight_lbs ?? '', 'number'));
+  r2.appendChild(_editField('edit_value_gp', 'Value (gp)', item.value_gp ?? '', 'number'));
+  const attuneWrap = el('div');
+  attuneWrap.innerHTML = `<label class="text-xs text-gray-400 block mb-1">Attunement</label>
+    <div class="flex items-center gap-2 h-9"><input id="edit_requires_attunement" type="checkbox" ${item.requires_attunement ? 'checked' : ''} />
+    <span class="text-xs text-gray-300">Required</span></div>`;
+  r2.appendChild(attuneWrap);
+  r2.appendChild(_editField('edit_attunement_by', 'Attuned by', item.attunement_by || ''));
+  basics.appendChild(r2);
+  basics.appendChild(_editTextarea('edit_description', 'Description', item.description, 3));
+  basics.appendChild(_editTextarea('edit_lore', 'Lore', item.lore, 3));
+  form.appendChild(basics);
+
+  const bonusPanel = el('div', 'panel space-y-2');
+  bonusPanel.appendChild(_sectionLabel('Stat Bonuses'));
+  const bonusCont = el('div', 'space-y-2');
+  bonusCont.id = 'edit_bonuses_container';
+  for (const b of (item.bonuses || [])) bonusCont.appendChild(_makeBonusRow(b.stat, b.value));
+  bonusPanel.appendChild(bonusCont);
+  const addBonus = el('button', 'btn-secondary text-xs py-1 px-3 mt-2', '+ Add Bonus');
+  addBonus.onclick = () => document.getElementById('edit_bonuses_container').appendChild(_makeBonusRow('', 0));
+  bonusPanel.appendChild(addBonus);
+  form.appendChild(bonusPanel);
+
+  const abilPanel = el('div', 'panel space-y-3');
+  abilPanel.appendChild(_sectionLabel('Special Abilities'));
+  const abilCont = el('div', 'space-y-3');
+  abilCont.id = 'edit_abilities_container';
+  for (const a of (item.abilities || [])) abilCont.appendChild(_makeAbilityRow(a));
+  abilPanel.appendChild(abilCont);
+  const addAbil = el('button', 'btn-secondary text-xs py-1 px-3 mt-1', '+ Add Ability');
+  addAbil.onclick = () => document.getElementById('edit_abilities_container').appendChild(_makeAbilityRow({name:'',description:'',usage:'',activation:'Passive'}));
+  abilPanel.appendChild(addAbil);
+  form.appendChild(abilPanel);
+
+  return form;
+}
+
+function _collectItemEdits() {
+  const bonuses = [...document.querySelectorAll('#edit_bonuses_container .flex')].map(r => ({
+    stat: r.querySelector('.edit-bonus-stat').value.trim(),
+    value: parseInt(r.querySelector('.edit-bonus-val').value) || 0,
+  })).filter(b => b.stat);
+  const abilities = [...document.querySelectorAll('#edit_abilities_container .panel')].map(r => ({
+    name: r.querySelector('.edit-ability-name').value.trim(),
+    description: r.querySelector('.edit-ability-desc').value.trim(),
+    usage: r.querySelector('.edit-ability-usage').value.trim(),
+    activation: r.querySelector('.edit-ability-activation').value.trim() || 'Passive',
+  })).filter(a => a.name);
+  return {
+    name: document.getElementById('edit_name').value.trim(),
+    item_type: document.getElementById('edit_item_type').value.trim(),
+    rarity: document.getElementById('edit_rarity').value,
+    description: document.getElementById('edit_description').value.trim(),
+    lore: document.getElementById('edit_lore').value.trim(),
+    weight_lbs: parseFloat(document.getElementById('edit_weight_lbs').value) || null,
+    value_gp: parseInt(document.getElementById('edit_value_gp').value) || null,
+    requires_attunement: document.getElementById('edit_requires_attunement').checked,
+    attunement_by: document.getElementById('edit_attunement_by').value.trim(),
+    bonuses,
+    abilities,
+  };
+}
+
+// ---- Shop edit ----
+function _makeShopItemRow(item) {
+  const row = el('div', 'panel py-2 px-3 space-y-2 edit-shop-item-row');
+  const rarities = ['Common','Uncommon','Rare','Epic','Legendary'];
+  row.innerHTML = `
+    <div class="grid grid-cols-4 gap-2">
+      <input type="text" placeholder="Name" class="input-field text-xs edit-si-name col-span-2" value="${_escAttr(item.name)}" />
+      <input type="text" placeholder="Type" class="input-field text-xs edit-si-type" value="${_escAttr(item.item_type)}" />
+      <select class="input-field text-xs edit-si-rarity">
+        ${rarities.map(r => `<option ${item.rarity===r?'selected':''}>${r}</option>`).join('')}
+      </select>
+    </div>
+    <div class="grid grid-cols-4 gap-2 items-center">
+      <div class="flex items-center gap-1"><input type="number" placeholder="gp" class="input-field text-xs edit-si-price flex-1" value="${item.price_gp??''}" /><span class="text-xs text-gray-500">gp</span></div>
+      <div class="flex items-center gap-1.5"><input type="checkbox" class="edit-si-under" ${item.is_under_table?'checked':''} /><span class="text-xs text-gray-400">Under table</span></div>
+      <input type="text" placeholder="Concept" class="input-field text-xs edit-si-concept" value="${_escAttr(item.concept||'')}" />
+      <button class="text-red-500 hover:text-red-300 text-xs text-right" onclick="this.closest('.edit-shop-item-row').remove()">Remove</button>
+    </div>
+    <textarea placeholder="Description" class="input-field text-xs w-full edit-si-desc" rows="2">${_escHtml(item.description)}</textarea>`;
+  return row;
+}
+
+function _buildShopEditForm(shop) {
+  const form = el('div', 'space-y-4');
+
+  const shopPanel = el('div', 'panel space-y-3');
+  shopPanel.appendChild(_sectionLabel('Shop Details'));
+  const r1 = el('div', 'grid grid-cols-3 gap-3');
+  r1.appendChild(_editField('edit_shop_name', 'Name', shop.name));
+  r1.appendChild(_editField('edit_shop_category', 'Category', shop.category));
+  r1.appendChild(_editSelect('edit_shop_type', 'Type', ['building','stall','cart','ship','cave'], shop.shop_type));
+  shopPanel.appendChild(r1);
+  shopPanel.appendChild(_editTextarea('edit_shop_description', 'Description', shop.description, 3));
+  shopPanel.appendChild(_editTextarea('edit_shop_atmosphere', 'Atmosphere', shop.atmosphere || '', 2));
+  form.appendChild(shopPanel);
+
+  const sk = shop.shopkeeper;
+  const skPanel = el('div', 'panel space-y-3');
+  skPanel.appendChild(_sectionLabel('Shopkeeper'));
+  const skr1 = el('div', 'grid grid-cols-4 gap-3');
+  skr1.appendChild(_editField('edit_sk_name', 'Name', sk.name));
+  skr1.appendChild(_editField('edit_sk_race', 'Race', sk.race));
+  skr1.appendChild(_editField('edit_sk_class', 'Class', sk.character_class));
+  skr1.appendChild(_editField('edit_sk_gender', 'Gender', sk.gender || ''));
+  skPanel.appendChild(skr1);
+  skPanel.appendChild(_editTextarea('edit_sk_appearance', 'Appearance', sk.appearance, 2));
+  skPanel.appendChild(_editTextarea('edit_sk_personality', 'Personality', sk.personality, 2));
+  skPanel.appendChild(_editTextarea('edit_sk_motivation', 'Motivation', sk.motivation || '', 2));
+  form.appendChild(skPanel);
+
+  const itemsPanel = el('div', 'panel space-y-3');
+  itemsPanel.appendChild(_sectionLabel('Stock'));
+  const itemsCont = el('div', 'space-y-2');
+  itemsCont.id = 'edit_shop_items';
+  for (const item of (shop.items || [])) itemsCont.appendChild(_makeShopItemRow(item));
+  itemsPanel.appendChild(itemsCont);
+  const addItem = el('button', 'btn-secondary text-xs py-1 px-3 mt-1', '+ Add Item');
+  addItem.onclick = () => document.getElementById('edit_shop_items').appendChild(
+    _makeShopItemRow({name:'',item_type:'',rarity:'Common',price_gp:null,description:'',is_under_table:false,concept:''})
+  );
+  itemsPanel.appendChild(addItem);
+  form.appendChild(itemsPanel);
+
+  return form;
+}
+
+function _collectShopEdits() {
+  const items = [...document.querySelectorAll('.edit-shop-item-row')].map(r => ({
+    name: r.querySelector('.edit-si-name').value.trim(),
+    item_type: r.querySelector('.edit-si-type').value.trim(),
+    rarity: r.querySelector('.edit-si-rarity').value,
+    price_gp: parseInt(r.querySelector('.edit-si-price').value) || null,
+    description: r.querySelector('.edit-si-desc').value.trim(),
+    is_under_table: r.querySelector('.edit-si-under').checked,
+    concept: r.querySelector('.edit-si-concept').value.trim(),
+  }));
+  return {
+    name: document.getElementById('edit_shop_name').value.trim(),
+    shop_type: document.getElementById('edit_shop_type').value,
+    category: document.getElementById('edit_shop_category').value.trim(),
+    description: document.getElementById('edit_shop_description').value.trim(),
+    atmosphere: document.getElementById('edit_shop_atmosphere').value.trim(),
+    shopkeeper: {
+      name: document.getElementById('edit_sk_name').value.trim(),
+      race: document.getElementById('edit_sk_race').value.trim(),
+      character_class: document.getElementById('edit_sk_class').value.trim(),
+      gender: document.getElementById('edit_sk_gender').value.trim(),
+      appearance: document.getElementById('edit_sk_appearance').value.trim(),
+      personality: document.getElementById('edit_sk_personality').value.trim(),
+      motivation: document.getElementById('edit_sk_motivation').value.trim(),
+      concept: currentShop?.shopkeeper?.concept || '',
+    },
+    items,
+  };
+}
+
+// ---- Edit mode orchestration ----
+function enterEditMode() {
+  document.getElementById('historyViewButtons').classList.add('hidden');
+  document.getElementById('historyEditButtons').classList.remove('hidden');
+  document.getElementById('historySaveRow').classList.add('hidden');
+  document.getElementById('historySyncStatus').classList.add('hidden');
+  document.getElementById('historyResyncWarning').classList.add('hidden');
+  document.getElementById('historySaveResult').classList.add('hidden');
+
+  const sheet = document.getElementById('historySheet');
+  sheet.innerHTML = '';
+  if (selectedHistoryEntryType === 'Item') {
+    sheet.appendChild(_buildItemEditForm(currentItem));
+  } else if (selectedHistoryEntryType === 'Shop') {
+    sheet.appendChild(_buildShopEditForm(currentShop));
+  } else {
+    sheet.appendChild(_buildCharacterEditForm(currentCharacter));
+  }
+}
+
+function exitEditMode(reRender = true) {
+  document.getElementById('historyViewButtons').classList.remove('hidden');
+  document.getElementById('historyEditButtons').classList.add('hidden');
+
+  if (reRender) {
+    const sheet = document.getElementById('historySheet');
+    sheet.innerHTML = '';
+    if (selectedHistoryEntryType === 'Item') renderItemSheet(currentItem, sheet);
+    else if (selectedHistoryEntryType === 'Shop') _renderShopContent(currentShop, sheet);
+    else renderSheet(currentCharacter, sheet);
+  }
+
+  const entry = historyEntries.find(e => e.id === currentHistoryId);
+  if (entry) _updateHistorySyncStatus(entry);
+}
+
+async function saveEdit() {
+  let updates;
+  if (selectedHistoryEntryType === 'Item') updates = _collectItemEdits();
+  else if (selectedHistoryEntryType === 'Shop') updates = _collectShopEdits();
+  else updates = _collectCharacterEdits();
+
+  const btn = document.getElementById('historyEditSaveBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Saving…';
+
+  try {
+    const r = await fetch(`/api/history/${currentHistoryId}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Save failed');
+
+    // Merge updates into in-memory current object
+    if (selectedHistoryEntryType === 'Item') currentItem = { ...currentItem, ...updates };
+    else if (selectedHistoryEntryType === 'Shop') currentShop = { ...currentShop, ...updates };
+    else currentCharacter = { ...currentCharacter, ...updates };
+
+    // Update in-memory history list entry metadata
+    const entry = historyEntries.find(e => e.id === currentHistoryId);
+    if (entry) {
+      if (updates.name) entry.name = updates.name;
+      if (updates.item_type) entry.item_type = updates.item_type;
+      if (updates.rarity) entry.rarity = updates.rarity;
+      if (updates.shop_type) entry.shop_type = updates.shop_type;
+      if (updates.category) entry.category = updates.category;
+      if (updates.items) entry.item_count = updates.items.length;
+      entry.edited_at = data.edited_at;
+      if (data.out_of_sync) entry.docmost_out_of_sync = true;
+    }
+
+    renderHistoryList();
+    exitEditMode(true);
+  } catch (e) {
+    alert(`Save failed: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i>Save Changes';
+  }
 }
 
 // -----------------------------------------------------------------------

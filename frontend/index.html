@@ -596,10 +596,15 @@
         <div id="historyActions" class="panel">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div id="historyEntryMeta" class="text-xs text-gray-500 leading-relaxed"></div>
-            <div class="flex flex-wrap gap-2 items-center">
+            <div id="historyViewButtons" class="flex flex-wrap gap-2 items-center">
               <button onclick="exportToPDF()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-file-pdf mr-1"></i>PDF</button>
               <button id="historyFoundryBtn" onclick="exportToFoundryJSON()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-dice-d20 mr-1"></i>Foundry</button>
               <a id="historyDocmostLink" class="hidden btn-secondary text-xs py-1.5 px-3" href="#" target="_blank" rel="noopener" style="text-decoration:none">View in Docmost →</a>
+              <button onclick="enterEditMode()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-pen mr-1"></i>Edit</button>
+            </div>
+            <div id="historyEditButtons" class="hidden flex flex-wrap gap-2 items-center">
+              <button id="historyEditSaveBtn" onclick="saveEdit()" class="btn-primary text-xs py-1.5 px-3"><i class="fa-solid fa-floppy-disk mr-1"></i>Save Changes</button>
+              <button onclick="exitEditMode(true)" class="btn-secondary text-xs py-1.5 px-3">Cancel</button>
             </div>
           </div>
           <!-- First-save row (hidden once synced) -->

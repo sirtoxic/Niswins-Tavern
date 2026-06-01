@@ -332,3 +332,7 @@ class SettingsUpdate(BaseModel):
 
 class TestPageUrlRequest(BaseModel):
     url: str
+
+
+class UpdateEntryRequest(BaseModel):
+    updates: dict

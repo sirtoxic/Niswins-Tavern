@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv, dotenv_values, set_key
 
-from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, SettingsUpdate, TestPageUrlRequest
+from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest
 from character_generator import generate_character
 from item_generator import generate_item
 from shop_generator import generate_shop
@@ -186,6 +186,7 @@ async def api_save(req: SaveRequest):
                     "docmost_page_id": page_id,
                     "docmost_url": docmost_url,
                     "docmost_synced_at": datetime.now(timezone.utc).isoformat(),
+                    "docmost_out_of_sync": False,
                 })
             except Exception:
                 pass  # Don't fail the save if history update fails
@@ -235,6 +236,7 @@ async def api_save_item(req: SaveItemRequest):
                     "docmost_page_id": page_id,
                     "docmost_url": docmost_url,
                     "docmost_synced_at": datetime.now(timezone.utc).isoformat(),
+                    "docmost_out_of_sync": False,
                 })
             except Exception:
                 pass
@@ -283,11 +285,45 @@ async def api_save_shop(req: SaveShopRequest):
                     "docmost_page_id": page_id,
                     "docmost_url": docmost_url,
                     "docmost_synced_at": datetime.now(timezone.utc).isoformat(),
+                    "docmost_out_of_sync": False,
                 })
             except Exception:
                 pass
 
         return {"success": True, "page_id": page_id, "docmost_url": docmost_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/history/{entry_id}/update")
+async def update_history_entry(entry_id: str, req: UpdateEntryRequest):
+    try:
+        entry = history_store.get_entry(entry_id)
+        obj_key = {"Character": "character", "Generic NPC": "character", "Item": "item", "Shop": "shop"}.get(entry.get("type", ""))
+        if obj_key and obj_key in entry:
+            entry[obj_key].update(req.updates)
+        # Keep top-level metadata in sync with edited fields
+        if "name" in req.updates:
+            entry["name"] = req.updates["name"]
+        if obj_key == "item":
+            for k in ("item_type", "rarity"):
+                if k in req.updates:
+                    entry[k] = req.updates[k]
+        if obj_key == "shop":
+            for k in ("shop_type", "category"):
+                if k in req.updates:
+                    entry[k] = req.updates[k]
+            if "items" in req.updates:
+                entry["item_count"] = len(req.updates["items"])
+        edited_at = datetime.now(timezone.utc).isoformat()
+        entry["edited_at"] = edited_at
+        out_of_sync = bool(entry.get("docmost_page_id"))
+        if out_of_sync:
+            entry["docmost_out_of_sync"] = True
+        history_store.save_entry(entry)
+        return {"success": True, "edited_at": edited_at, "out_of_sync": out_of_sync}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="History entry not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
