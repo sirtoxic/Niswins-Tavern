@@ -255,6 +255,11 @@ class GenerateItemRequest(BaseModel):
     target_level_min: int = 1
     target_level_max: int = 5
     additional_notes: str = ""
+    magic_theme: str = ""          # e.g. "Fire", "Shadow", "Nature"
+    material: str = ""             # e.g. "Mithral", "Obsidian", "Bone"
+    stat_bonus_target: str = ""    # e.g. "Strength", "Attack Rolls", "Dexterity Saving Throws"
+    damage_type: str = ""          # e.g. "Fire", "Cold", "Necrotic" — relevant for weapons
+    attunement: str = "auto"       # "auto" | "required" | "none"
 
 
 class SaveItemRequest(BaseModel):

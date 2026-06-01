@@ -48,14 +48,31 @@ Rules:
 
 def _build_prompt(req: GenerateItemRequest) -> str:
     rarity_guide = RARITY_GUIDELINES.get(req.rarity, RARITY_GUIDELINES["Uncommon"])
-    notes = f"\nAdditional notes: {req.additional_notes}" if req.additional_notes.strip() else ""
+
+    extras: list[str] = []
+    if req.magic_theme.strip():
+        extras.append(f"- Magic theme / element: {req.magic_theme} — lean into this throughout name, description, lore, and ability flavour")
+    if req.material.strip():
+        extras.append(f"- Primary material: {req.material} — use this in the description and name where appropriate")
+    if req.stat_bonus_target.strip():
+        extras.append(f"- Preferred stat for bonuses: {req.stat_bonus_target} — use this stat in the bonuses array unless it genuinely conflicts with the rarity rule")
+    if req.damage_type.strip():
+        extras.append(f"- Damage type (weapons): {req.damage_type} — attacks and ability damage should use this type")
+    if req.attunement == "required":
+        extras.append("- Attunement: REQUIRED — requires_attunement must be true")
+    elif req.attunement == "none":
+        extras.append("- Attunement: NOT required — requires_attunement must be false")
+    if req.additional_notes.strip():
+        extras.append(f"- Additional notes: {req.additional_notes}")
+
+    extra_block = ("\n" + "\n".join(extras)) if extras else ""
 
     return f"""Design a D&D 5e magic item:
 - Concept: {req.concept}
 - Item type: {req.item_type}
 - Rarity: {req.rarity}
 - Target character level range: {req.target_level_min}–{req.target_level_max}
-- Rarity rule: {rarity_guide}{notes}
+- Rarity rule: {rarity_guide}{extra_block}
 
 Return a JSON object matching this exact schema. Every field is required.
 

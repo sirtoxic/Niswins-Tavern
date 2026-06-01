@@ -1018,6 +1018,11 @@ async function generateItem() {
       target_level_min: minLevel,
       target_level_max: maxLevel,
       additional_notes: document.getElementById('itemNotes').value.trim(),
+      magic_theme: document.getElementById('itemMagicTheme').value.trim(),
+      material: document.getElementById('itemMaterial').value.trim(),
+      stat_bonus_target: document.getElementById('itemStatBonus').value.trim(),
+      damage_type: document.getElementById('itemDamageType').value.trim(),
+      attunement: document.getElementById('itemAttunement').value,
     };
 
     const r = await fetch('/api/generate-item', {

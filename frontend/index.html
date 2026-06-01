@@ -306,21 +306,80 @@
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="text-xs text-gray-400 block mb-1">Min Level</label>
-            <select id="itemLevelMin" class="input-field text-sm">
-              <script>for(let i=1;i<=20;i++) document.write(`<option value="${i}"${i===1?' selected':''}>${i}</option>`)</script>
-            </select>
+            <input id="itemLevelMin" type="number" min="1" max="20" value="1" class="input-field text-sm" />
           </div>
           <div>
             <label class="text-xs text-gray-400 block mb-1">Max Level</label>
-            <select id="itemLevelMax" class="input-field text-sm">
-              <script>for(let i=1;i<=20;i++) document.write(`<option value="${i}"${i===5?' selected':''}>${i}</option>`)</script>
+            <input id="itemLevelMax" type="number" min="1" max="20" value="5" class="input-field text-sm" />
+          </div>
+        </div>
+
+        <div class="section-header mt-2">More Options <span class="text-gray-600 text-xs font-normal normal-case tracking-normal">(optional)</span></div>
+
+        <div class="space-y-3">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Magic Theme</label>
+              <input id="itemMagicTheme" type="text" placeholder="e.g. Fire, Shadow…" class="input-field text-sm" list="itemMagicThemeList" />
+              <datalist id="itemMagicThemeList">
+                <option value="Fire"><option value="Frost / Ice"><option value="Lightning">
+                <option value="Shadow / Darkness"><option value="Nature / Verdant">
+                <option value="Necrotic / Death"><option value="Radiant / Holy">
+                <option value="Arcane / Eldritch"><option value="Wind / Storm">
+                <option value="Earth / Stone"><option value="Water / Ocean">
+                <option value="Poison"><option value="Psychic"><option value="Time / Temporal">
+              </datalist>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Material</label>
+              <input id="itemMaterial" type="text" placeholder="e.g. Mithral, Bone…" class="input-field text-sm" list="itemMaterialList" />
+              <datalist id="itemMaterialList">
+                <option value="Mithral"><option value="Adamantine"><option value="Darkwood">
+                <option value="Dragon bone"><option value="Obsidian"><option value="Silver">
+                <option value="Iron"><option value="Cold iron"><option value="Bone">
+                <option value="Crystal"><option value="Shadowweave cloth"><option value="Moonstone">
+              </datalist>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Stat Bonus Target</label>
+              <input id="itemStatBonus" type="text" placeholder="e.g. Strength, AC…" class="input-field text-sm" list="itemStatBonusList" />
+              <datalist id="itemStatBonusList">
+                <option value="Strength"><option value="Dexterity"><option value="Constitution">
+                <option value="Intelligence"><option value="Wisdom"><option value="Charisma">
+                <option value="Attack Rolls"><option value="Armor Class">
+                <option value="Spell Attack Rolls"><option value="Spell Save DC">
+                <option value="Strength Saving Throws"><option value="Dexterity Saving Throws">
+                <option value="Constitution Saving Throws"><option value="Wisdom Saving Throws">
+              </datalist>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Damage Type</label>
+              <input id="itemDamageType" type="text" placeholder="e.g. Fire, Cold…" class="input-field text-sm" list="itemDamageTypeList" />
+              <datalist id="itemDamageTypeList">
+                <option value="Fire"><option value="Cold"><option value="Lightning">
+                <option value="Thunder"><option value="Acid"><option value="Poison">
+                <option value="Necrotic"><option value="Radiant"><option value="Psychic">
+                <option value="Force"><option value="Piercing"><option value="Slashing"><option value="Bludgeoning">
+              </datalist>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Attunement</label>
+            <select id="itemAttunement" class="input-field text-sm">
+              <option value="auto">Auto — let Claude decide</option>
+              <option value="required">Always required</option>
+              <option value="none">Never required</option>
             </select>
           </div>
         </div>
 
         <div>
           <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
-          <textarea id="itemNotes" rows="2" placeholder="Frost themed, once belonged to a frost giant jarl..." class="input-field resize-none text-sm"></textarea>
+          <textarea id="itemNotes" rows="2" placeholder="Once belonged to a frost giant jarl, has a grudge against dragons…" class="input-field resize-none text-sm"></textarea>
         </div>
 
         <button id="generateItemBtn" onclick="generateItem()" class="btn-primary w-full flex items-center justify-center gap-2">
