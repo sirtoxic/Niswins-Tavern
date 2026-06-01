@@ -164,6 +164,9 @@ function renderHistoryList() {
       const extra = [
         e.type, e.race, e.character_class, e.alignment,
         e.item_type, e.rarity,
+        e.level != null ? String(e.level) : null,
+        e.target_level_min != null ? String(e.target_level_min) : null,
+        e.target_level_max != null ? String(e.target_level_max) : null,
       ].filter(Boolean).join(' ').toLowerCase();
       return name.includes(historySearchQuery) || extra.includes(historySearchQuery);
     });
