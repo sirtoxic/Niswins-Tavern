@@ -171,10 +171,17 @@ function renderHistoryList() {
   }
 
   const searchQuery = (document.getElementById('historySearch')?.value || '').toLowerCase().trim();
+  const sortMode = document.getElementById('historySort')?.value || 'date-desc';
+  const docmostFilter = document.getElementById('historyDocmostFilter')?.value || 'all';
 
   let filtered = historyEntries;
   if (historyActiveTag) {
     filtered = filtered.filter(e => e.type === historyActiveTag);
+  }
+  if (docmostFilter === 'saved') {
+    filtered = filtered.filter(e => e.docmost_page_id);
+  } else if (docmostFilter === 'unsaved') {
+    filtered = filtered.filter(e => !e.docmost_page_id);
   }
   if (searchQuery) {
     filtered = filtered.filter(e => {
@@ -189,6 +196,15 @@ function renderHistoryList() {
       return name.includes(searchQuery) || extra.includes(searchQuery);
     });
   }
+
+  if (sortMode === 'date-asc') {
+    filtered = [...filtered].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  } else if (sortMode === 'name-asc') {
+    filtered = [...filtered].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  } else if (sortMode === 'name-desc') {
+    filtered = [...filtered].sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+  }
+  // date-desc is the default order from the API (already sorted newest-first)
 
   if (filtered.length === 0) {
     container.innerHTML =

@@ -562,6 +562,19 @@
       </div>
       <div class="mb-3 space-y-2">
         <input id="historySearch" type="text" placeholder="Search by name…" class="input-field text-xs" oninput="filterHistory()" />
+        <div class="flex gap-2">
+          <select id="historySort" class="input-field text-xs flex-1" onchange="filterHistory()">
+            <option value="date-desc">Date (newest)</option>
+            <option value="date-asc">Date (oldest)</option>
+            <option value="name-asc">Name A–Z</option>
+            <option value="name-desc">Name Z–A</option>
+          </select>
+          <select id="historyDocmostFilter" class="input-field text-xs flex-1" onchange="filterHistory()">
+            <option value="all">All</option>
+            <option value="saved">In Docmost</option>
+            <option value="unsaved">Not saved</option>
+          </select>
+        </div>
         <div id="historyTagFilters" class="flex flex-wrap gap-1"></div>
       </div>
       <div id="historyEntriesList">
