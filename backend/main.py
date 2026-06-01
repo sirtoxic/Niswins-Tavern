@@ -113,62 +113,6 @@ async def test_page_url(req: TestPageUrlRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/api/settings/debug-page")
-async def debug_page_url():
-    """Returns raw Docmost API responses — for diagnosing page resolution."""
-    import httpx
-    results = []
-    try:
-        await docmost._ensure_auth()
-        await docmost._ensure_space()
-        space_id = docmost._space_id
-
-        def is_json(r):
-            ct = r.headers.get("content-type", "")
-            return "json" in ct or r.text.strip()[:1] in ("{", "[")
-
-        async with httpx.AsyncClient() as client:
-            strategies = [
-                ("POST /pages (base, spaceId body)", "POST",
-                 f"{docmost.base_url}/pages",
-                 {"json": {"spaceId": space_id}}),
-                ("POST /pages/query", "POST",
-                 f"{docmost.base_url}/pages/query",
-                 {"json": {"spaceId": space_id}}),
-                ("POST /pages/tree", "POST",
-                 f"{docmost.base_url}/pages/tree",
-                 {"json": {"spaceId": space_id}}),
-                ("POST /search", "POST",
-                 f"{docmost.base_url}/search",
-                 {"json": {"query": "npcs", "spaceId": space_id}}),
-                ("GET /search?q=npcs", "GET",
-                 f"{docmost.base_url}/search",
-                 {"params": {"q": "npcs", "spaceId": space_id}}),
-                ("POST /spaces/pages", "POST",
-                 f"{docmost.base_url}/spaces/pages",
-                 {"json": {"spaceId": space_id}}),
-                ("GET /spaces/{id}", "GET",
-                 f"{docmost.base_url}/spaces/{space_id}", {}),
-                ("POST /workspaces/pages", "POST",
-                 f"{docmost.base_url}/workspaces/pages",
-                 {"json": {"spaceId": space_id}}),
-            ]
-            for label, method, endpoint, kwargs in strategies:
-                try:
-                    fn = client.post if method == "POST" else client.get
-                    r = await fn(endpoint, headers=docmost._headers(), timeout=10.0, **kwargs)
-                    results.append({
-                        "strategy": label,
-                        "status": r.status_code,
-                        "is_json": is_json(r),
-                        "body": r.text[:600] if is_json(r) else "<html>",
-                    })
-                except Exception as ex:
-                    results.append({"strategy": label, "error": str(ex)})
-    except Exception as ex:
-        results.append({"auth_error": str(ex)})
-    return {"results": results}
-
 
 @app.post("/api/generate")
 async def api_generate(req: GenerateRequest):

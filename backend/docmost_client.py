@@ -219,63 +219,50 @@ class DocmostClient:
         """Resolve a Docmost page URL to (page_id, page_title). Raises ValueError on failure.
 
         URL format: {base}/s/{space_slug}/p/{page_slug}
-        Primary strategy: GET /pages/page-info?pageSlug=...&spaceSlug=...
-        Fallback: GET /pages/{id} in case the user pasted a UUID-based URL.
+        Uses POST /search and matches results by slugId (the unique suffix in the URL slug).
         """
         parsed = urlparse(url)
         parts = [p for p in parsed.path.split("/") if p]
-
-        # Extract space_slug and page_slug from path: s/{space_slug}/p/{page_slug}
         try:
-            s_idx = parts.index("s")
-            space_slug = parts[s_idx + 1]
-            p_idx = parts.index("p")
-            page_slug = parts[p_idx + 1]
+            page_slug = parts[parts.index("p") + 1]
         except (ValueError, IndexError):
             raise ValueError(
-                f"Cannot parse space/page slug from URL: {url!r}\n"
+                f"Cannot parse page slug from URL: {url!r}\n"
                 "Expected format: https://your-wiki/s/{space}/p/{page-slug}"
             )
 
+        # The URL slug is like "my-page-title-AbCdEfGhIj" — the last segment is the unique slugId
+        if "-" in page_slug:
+            slug_id = page_slug.rsplit("-", 1)[1]
+            title_hint = page_slug.rsplit("-", 1)[0].replace("-", " ")
+        else:
+            slug_id = page_slug
+            title_hint = page_slug
+
         await self._ensure_auth()
+        await self._ensure_space()
 
         async with httpx.AsyncClient() as client:
-            # Strategy 1: page-info endpoint (how the Docmost frontend loads pages by slug)
-            try:
-                r = await client.get(
-                    f"{self.base_url}/pages/page-info",
-                    params={"pageSlug": page_slug, "spaceSlug": space_slug},
-                    headers=self._headers(),
-                    timeout=10.0,
-                )
-                if r.status_code == 200:
-                    data = r.json().get("data", r.json())
-                    page_id = data.get("id")
-                    title = data.get("title", page_slug)
-                    if page_id:
-                        return page_id, title
-            except Exception:
-                pass
-
-            # Strategy 2: direct UUID lookup (in case someone pastes an older /page/{uuid} URL)
-            try:
-                r = await client.get(
-                    f"{self.base_url}/pages/{page_slug}",
-                    headers=self._headers(),
-                    timeout=10.0,
-                )
-                if r.status_code == 200:
-                    data = r.json().get("data", r.json())
-                    page_id = data.get("id")
-                    title = data.get("title", page_slug)
-                    if page_id:
-                        return page_id, title
-            except Exception:
-                pass
+            # Search by title hint first, then by slugId as fallback.
+            # Match whichever result has the right slugId — it's unique per page.
+            for query in [title_hint, slug_id]:
+                try:
+                    r = await client.post(
+                        f"{self.base_url}/search",
+                        json={"query": query, "spaceId": self._space_id},
+                        headers=self._headers(),
+                        timeout=10.0,
+                    )
+                    if r.status_code == 200:
+                        for item in r.json().get("data", {}).get("items", []):
+                            if item.get("slugId") == slug_id:
+                                return item["id"], item.get("title", page_slug)
+                except Exception:
+                    pass
 
         raise ValueError(
-            f"Could not resolve Docmost page from URL: {url!r}\n"
-            "Check the URL is correct and your credentials have access to the page."
+            f"Could not find page with slug ID '{slug_id}' in your Docmost space.\n"
+            "Make sure the URL is correct and your service account has access to the page."
         )
 
     async def _get_root_folder_page_id(self, folder_key: str) -> str:
