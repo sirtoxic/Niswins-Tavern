@@ -1,19 +1,39 @@
-"""
-Docmost community edition REST client.
-
-Discovered API behaviour:
-  POST /api/auth/login       → sets authToken cookie (JWT)
-  POST /api/spaces           → lists spaces  { data: { items: [...] } }
-  POST /api/pages/create     → create page   { title, spaceId, parentPageId?, content, format }
-                               response includes data.slug and data.slugId for URL construction
-  POST /api/pages/update     → update page   { pageId, operation, content, format }
-  GET  /api/pages/:id        → fetch page    { data: { content, slug, slugId, ... } }
-
-Auth: Bearer token in Authorization header (extracted from authToken cookie after login).
-
-URL format: {base}/s/{space_slug}/p/{page_slug}
-  e.g. https://wiki.example.com/s/general/p/my-character-5A8xj8JFin
-"""
+# docmost_client.py
+# REST client for Docmost (community edition) — handles all wiki sync for Niswins Tavern.
+#
+# Features:
+#   - Authentication via POST /api/auth/login (JWT stored per session; re-authenticated lazily).
+#   - Folder management: resolves configured folder URLs from settings or creates folders by name
+#     under a parent page; caches folder page IDs to avoid repeated lookups.
+#   - Page creation / update:
+#       - Characters / NPCs  → NPCs folder (or sub-folder by type)
+#       - Items              → Items / {item_type} sub-folder
+#       - Shops              → Locations / Shops sub-folder
+#       - Factions           → Factions / {faction_type} sub-folder
+#   - Re-sync: uses operation:"replace" on existing pages so content is fully replaced in-place.
+#   - Markdown rendering: each content type has its own _to_markdown() method producing structured
+#     wiki pages with headings, stat blocks, tables, and flavour text.
+#   - Two-way NPC linking:
+#       - NPC pages gain a ## Faction section (with "View Faction in Docmost" link) when linked to
+#         a faction, and a ## Shop section (with "View Shop in Docmost" link) when linked to a shop.
+#       - Faction pages gain a ## Connected NPCs section listing every linked NPC with a link.
+#       - Shop pages gain a ## Connected NPCs section listing shopkeeper and staff NPCs with links.
+#   - Sync footer appended to every page showing the action (Created / Re-synced) and UTC timestamp.
+#   - Note: Docmost page revision history is driven by the Y.js collaborative engine and is NOT
+#     updated by REST API writes — API saves change content but do not create revision entries.
+#
+# Discovered API behaviour:
+#   POST /api/auth/login       → sets authToken cookie (JWT)
+#   POST /api/spaces           → lists spaces  { data: { items: [...] } }
+#   POST /api/pages/create     → create page   { title, spaceId, parentPageId?, content, format }
+#                                response includes data.slug and data.slugId for URL construction
+#   POST /api/pages/update     → update page   { pageId, operation, content, format }
+#   GET  /api/pages/:id        → fetch page    { data: { content, slug, slugId, ... } }
+#
+# Auth: Bearer token in Authorization header (extracted from authToken cookie after login).
+#
+# URL format: {base}/s/{space_slug}/p/{page_slug}
+#   e.g. https://wiki.example.com/s/general/p/my-character-5A8xj8JFin
 
 from __future__ import annotations
 
@@ -21,9 +41,10 @@ import json
 import httpx
 import yaml
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
-from models import Character, Item, Shop
+from models import Character, Item, Shop, Faction
 
 _DEFAULT_FOLDER_NAMES: dict[str, str] = {
     "npcs": "NPCs",
@@ -31,6 +52,7 @@ _DEFAULT_FOLDER_NAMES: dict[str, str] = {
     "locations": "Locations",
     "encounters": "Encounters",
     "items": "Items",
+    "factions": "Factions",
 }
 
 logger = logging.getLogger(__name__)
@@ -317,7 +339,7 @@ class DocmostClient:
     # Character → Markdown
     # ------------------------------------------------------------------
 
-    def _character_to_markdown(self, char: Character) -> str:
+    def _character_to_markdown(self, char: Character, faction_affiliation: dict | None = None, shop_affiliation: dict | None = None) -> str:
         lines = []
 
         def h(level: int, text: str):
@@ -467,6 +489,18 @@ class DocmostClient:
         h(2, "Backstory")
         lines.append(char.backstory + "\n")
 
+        if faction_affiliation:
+            h(2, "Faction")
+            lines.append(f"**{faction_affiliation['faction_name']}** — {faction_affiliation['member_role']}\n")
+            if faction_affiliation.get("faction_url"):
+                lines.append(f"[View Faction in Docmost]({faction_affiliation['faction_url']})\n")
+
+        if shop_affiliation:
+            h(2, "Shop")
+            lines.append(f"**{shop_affiliation['shop_name']}** — {shop_affiliation['member_role']}\n")
+            if shop_affiliation.get("shop_url"):
+                lines.append(f"[View Shop in Docmost]({shop_affiliation['shop_url']})\n")
+
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -479,19 +513,24 @@ class DocmostClient:
             base = base[:-4]
         return f"{base}/s/{self._space_slug}/p/{page_slug}"
 
-    async def save_character(self, char: Character, folder_key: str = "npcs", existing_page_id: str | None = None) -> tuple[str, str]:
+    @staticmethod
+    def _sync_footer(action: str = "Synced") -> str:
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        return f"\n\n---\n*{action} via Niswins Tavern · {ts}*\n"
+
+    async def save_character(self, char: Character, folder_key: str = "npcs", existing_page_id: str | None = None, faction_affiliation: dict | None = None, shop_affiliation: dict | None = None) -> tuple[str, str]:
         """Returns (page_id, page_url). Updates existing page if existing_page_id is provided."""
         await self._ensure_auth()
         await self._ensure_space()
 
-        content = self._character_to_markdown(char)
-
         if existing_page_id:
+            content = self._character_to_markdown(char, faction_affiliation, shop_affiliation) + self._sync_footer("Re-synced")
             page_slug = await self._replace_page(existing_page_id, char.name, content)
             page_url = self._build_page_url(page_slug)
             logger.info(f"Updated '{char.name}' in Docmost (page {existing_page_id})")
             return existing_page_id, page_url
 
+        content = self._character_to_markdown(char, faction_affiliation, shop_affiliation) + self._sync_footer("Created")
         folder_page_id = await self._get_root_folder_page_id(folder_key)
         page_data = await self._create_page(
             space_id=self._space_id,
@@ -576,7 +615,7 @@ class DocmostClient:
     # Shop → Markdown
     # ------------------------------------------------------------------
 
-    def _shop_to_markdown(self, shop: Shop) -> str:
+    def _shop_to_markdown(self, shop: Shop, linked_npcs: list | None = None) -> str:
         lines = []
 
         def h(level: int, text: str):
@@ -601,6 +640,12 @@ class DocmostClient:
         if sk.motivation:
             lines.append(f"*{sk.motivation}*\n")
 
+        if shop.staff:
+            h(2, "Staff")
+            for member in shop.staff:
+                lines.append(f"**{member.name}** — {member.role}\n")
+                lines.append(f"{member.description}\n")
+
         h(2, "Stock")
 
         regular = [i for i in shop.items if not i.is_under_table]
@@ -622,6 +667,17 @@ class DocmostClient:
             for item in under:
                 _item_block(item)
 
+        if linked_npcs:
+            h(2, "Connected NPCs")
+            for npc in linked_npcs:
+                name = npc.get("npc_name", "Unknown")
+                role = npc.get("member_role", "")
+                url = npc.get("npc_docmost_url", "")
+                line = f"**{name}** — {role}"
+                if url:
+                    line += f"  [View in Docmost]({url})"
+                lines.append(line + "\n")
+
         return "\n".join(lines)
 
     def reload_config(self) -> None:
@@ -642,14 +698,14 @@ class DocmostClient:
         await self._ensure_auth()
         await self._ensure_space()
 
-        content = self._item_to_markdown(item)
-
         if existing_page_id:
+            content = self._item_to_markdown(item) + self._sync_footer("Re-synced")
             page_slug = await self._replace_page(existing_page_id, item.name, content)
             page_url = self._build_page_url(page_slug)
             logger.info(f"Updated item '{item.name}' in Docmost (page {existing_page_id})")
             return existing_page_id, page_url
 
+        content = self._item_to_markdown(item) + self._sync_footer("Created")
         items_root_id = await self._get_root_folder_page_id("items")
         type_folder_id = await self._get_or_create_folder_page(
             self._space_id, item.item_type, parent_page_id=items_root_id
@@ -676,19 +732,19 @@ class DocmostClient:
         logger.info(f"Saved item '{item.name}' to Docmost (page {page_id}, url={page_url})")
         return page_id, page_url
 
-    async def save_shop(self, shop: Shop, existing_page_id: str | None = None) -> tuple[str, str]:
+    async def save_shop(self, shop: Shop, existing_page_id: str | None = None, linked_npcs: list | None = None) -> tuple[str, str]:
         """Returns (page_id, page_url). Updates existing page if existing_page_id is provided."""
         await self._ensure_auth()
         await self._ensure_space()
 
-        content = self._shop_to_markdown(shop)
-
         if existing_page_id:
+            content = self._shop_to_markdown(shop, linked_npcs) + self._sync_footer("Re-synced")
             page_slug = await self._replace_page(existing_page_id, shop.name, content)
             page_url = self._build_page_url(page_slug)
             logger.info(f"Updated shop '{shop.name}' in Docmost (page {existing_page_id})")
             return existing_page_id, page_url
 
+        content = self._shop_to_markdown(shop, linked_npcs) + self._sync_footer("Created")
         locations_root_id = await self._get_root_folder_page_id("locations")
         shops_folder_id = await self._get_or_create_folder_page(
             self._space_id, "Shops", parent_page_id=locations_root_id
@@ -713,4 +769,108 @@ class DocmostClient:
             logger.warning(f"Could not update shops index: {e}")
 
         logger.info(f"Saved shop '{shop.name}' to Docmost (page {page_id}, url={page_url})")
+        return page_id, page_url
+
+    # ------------------------------------------------------------------
+    # Faction → Markdown
+    # ------------------------------------------------------------------
+
+    def _faction_to_markdown(self, faction: Faction, linked_npcs: list | None = None) -> str:
+        lines = []
+
+        def h(level: int, text: str):
+            lines.append(f"{'#' * level} {text}\n")
+
+        h(1, faction.name)
+        lines.append(
+            f"**{faction.faction_type}** · **{faction.size}** · **{faction.alignment}** · "
+            f"{faction.wealth} · {faction.public_reputation}\n"
+        )
+        lines.append(f"*\"{faction.motto}\"*\n")
+
+        h(2, "Overview")
+        lines.append(faction.overview + "\n")
+
+        h(2, "History")
+        lines.append(faction.history + "\n")
+
+        h(2, "Goals")
+        for g in faction.goals:
+            lines.append(f"- {g}")
+        lines.append("")
+
+        h(2, "Methods")
+        for m in faction.methods:
+            lines.append(f"- {m}")
+        lines.append("")
+
+        h(2, "Leadership")
+        h(3, f"{faction.leader.name} — {faction.leader.title}")
+        lines.append(f"*{faction.leader.race}*\n")
+        lines.append(faction.leader.description + "\n")
+
+        if faction.notable_members:
+            h(3, "Notable Members")
+            for member in faction.notable_members:
+                lines.append(f"**{member.name}** ({member.role}): {member.description}")
+            lines.append("")
+
+        h(2, "Intelligence")
+        lines.append(f"**Headquarters:** {faction.headquarters}\n")
+        lines.append(f"**Symbols:** {faction.symbols}\n")
+        if faction.allies:
+            lines.append(f"**Allies:** {', '.join(faction.allies)}\n")
+        if faction.enemies:
+            lines.append(f"**Enemies:** {', '.join(faction.enemies)}\n")
+
+        h(2, "Secrets (DM Only)")
+        for s in faction.secrets:
+            lines.append(f"- {s}")
+        lines.append("")
+
+        if linked_npcs:
+            h(2, "Connected NPCs")
+            for npc in linked_npcs:
+                lines.append(f"**{npc['npc_name']}** — {npc['member_role']}")
+                lines.append(f"[View in Docmost]({npc['npc_docmost_url']})\n")
+
+        return "\n".join(lines)
+
+    async def save_faction(self, faction: Faction, existing_page_id: str | None = None, linked_npcs: list | None = None) -> tuple[str, str]:
+        """Returns (page_id, page_url). Saves under Factions / {type} / {name}."""
+        await self._ensure_auth()
+        await self._ensure_space()
+
+        if existing_page_id:
+            content = self._faction_to_markdown(faction, linked_npcs) + self._sync_footer("Re-synced")
+            page_slug = await self._replace_page(existing_page_id, faction.name, content)
+            page_url = self._build_page_url(page_slug)
+            logger.info(f"Updated faction '{faction.name}' in Docmost (page {existing_page_id})")
+            return existing_page_id, page_url
+
+        content = self._faction_to_markdown(faction, linked_npcs) + self._sync_footer("Created")
+        factions_root_id = await self._get_root_folder_page_id("factions")
+        type_folder_id = await self._get_or_create_folder_page(
+            self._space_id, faction.faction_type, parent_page_id=factions_root_id
+        )
+        page_data = await self._create_page(
+            space_id=self._space_id,
+            title=faction.name,
+            content=content,
+            parent_page_id=type_folder_id,
+        )
+        page_id = page_data["id"]
+        page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
+        page_url = self._build_page_url(page_slug)
+
+        entry = (
+            f"- **{faction.name}** — {faction.size} {faction.faction_type}, "
+            f"{faction.alignment}, led by {faction.leader.name}\n"
+        )
+        try:
+            await self._append_to_page(type_folder_id, entry)
+        except Exception as e:
+            logger.warning(f"Could not update faction type index: {e}")
+
+        logger.info(f"Saved faction '{faction.name}' to Docmost (page {page_id}, url={page_url})")
         return page_id, page_url

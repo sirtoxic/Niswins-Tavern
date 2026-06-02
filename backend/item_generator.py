@@ -1,3 +1,15 @@
+# item_generator.py
+# Generates magic items and equipment for D&D 5e via Claude.
+#
+# Features:
+#   - Configurable rarity (Common → Legendary), target level range, item type, and magic theme.
+#   - Optional material flavour (e.g. Mithral, Obsidian), damage type, and stat bonus target so
+#     Claude can produce thematically cohesive items.
+#   - Attunement handling: "auto" lets Claude decide; "required" / "none" force the choice.
+#   - Output includes mechanical bonuses (stat/attack bonuses), named abilities with activation
+#     rules and usage limits, lore paragraph, weight, and GP value.
+#   - Token and cost reporting returned with each generation.
+
 from __future__ import annotations
 
 import json

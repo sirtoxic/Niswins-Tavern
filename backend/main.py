@@ -1,16 +1,51 @@
+# main.py
+# FastAPI application — the single backend entry point for Niswins Tavern.
+#
+# API routes:
+#   GET  /api/config                         — folder list for the save-folder dropdowns
+#   GET  /api/settings                       — read current settings from config.yaml / .env
+#   POST /api/settings                       — write settings; reloads Docmost client config
+#   POST /api/test-page-url                  — validates a Docmost folder URL via live fetch
+#
+#   POST /api/generate                       — generate a Character or Generic NPC via Claude
+#   POST /api/save                           — save character/NPC to Docmost and history
+#
+#   POST /api/generate-item                  — generate a magic item via Claude
+#   POST /api/save-item                      — save item to Docmost and history
+#
+#   POST /api/generate-shop                  — generate a shop (with shopkeeper and stock) via Claude
+#   POST /api/save-shop                      — save shop to Docmost and history (preserves linked NPCs)
+#   POST /api/shop/{id}/link-npc             — two-way link: adds NPC to shop's Connected NPCs section
+#                                              and adds Shop section to NPC page
+#   POST /api/shop/{id}/regenerate-staff     — generate a new shopkeeper or staff member via Claude
+#
+#   POST /api/generate-faction               — generate a faction via Claude
+#   POST /api/save-faction                   — save faction to Docmost and history (preserves linked NPCs)
+#   POST /api/faction/{id}/link-npc          — two-way link: adds NPC to faction's Connected NPCs section
+#                                              and adds Faction section to NPC page
+#   POST /api/faction/{id}/regenerate-member — generate a new leader or notable member via Claude
+#
+#   GET  /api/history                        — list all history entries (lightweight, data blobs stripped)
+#   GET  /api/history/{id}                   — fetch a single history entry with full data
+#   POST /api/history/{id}/update            — patch fields on a history entry (used for in-place edits)
+#
+# Static files: the /frontend directory is served at / with index.html as the fallback.
+
 import os
 import yaml
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv, dotenv_values, set_key
 
-from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest
+from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, LinkShopNpcRequest, RegenerateShopStaffRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest, GenerateFactionRequest, SaveFactionRequest, LinkFactionNpcRequest, RegenerateMemberRequest
 from character_generator import generate_character
 from item_generator import generate_item
-from shop_generator import generate_shop
+from shop_generator import generate_shop, generate_shop_staff
+from faction_generator import generate_faction, generate_faction_member
 from docmost_client import DocmostClient
 import history_store
 
@@ -36,6 +71,7 @@ def _ensure_config_files() -> None:
                     "locations": "",
                     "encounters": "",
                     "items": "",
+                    "factions": "",
                 },
             },
             "claude": {"model": "claude-sonnet-4-6"},
@@ -93,6 +129,7 @@ async def get_settings():
         "folder_url_locations": folder_urls.get("locations", ""),
         "folder_url_encounters": folder_urls.get("encounters", ""),
         "folder_url_items": folder_urls.get("items", ""),
+        "folder_url_factions": folder_urls.get("factions", ""),
     }
 
 
@@ -120,6 +157,7 @@ async def update_settings(req: SettingsUpdate):
                 "locations": req.folder_url_locations,
                 "encounters": req.folder_url_encounters,
                 "items": req.folder_url_items,
+                "factions": req.folder_url_factions,
             },
         }
         cfg["claude"] = {"model": req.claude_model}
@@ -175,7 +213,7 @@ async def api_generate(req: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _existing_page_id(history_id: str | None) -> str | None:
+def _existing_page_id(history_id: Optional[str]) -> Optional[str]:
     """Return the stored docmost_page_id for a history entry, or None."""
     if not history_id:
         return None
@@ -291,8 +329,16 @@ async def api_generate_shop(req: GenerateShopRequest):
 @app.post("/api/save-shop")
 async def api_save_shop(req: SaveShopRequest):
     try:
+        linked_npcs = []
+        if req.history_id:
+            try:
+                linked_npcs = history_store.get_entry(req.history_id).get("linked_npcs", [])
+            except Exception:
+                pass
         page_id, docmost_url = await docmost.save_shop(
-            req.shop, existing_page_id=_existing_page_id(req.history_id)
+            req.shop,
+            existing_page_id=_existing_page_id(req.history_id),
+            linked_npcs=linked_npcs or None,
         )
 
         if req.history_id:
@@ -311,11 +357,233 @@ async def api_save_shop(req: SaveShopRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/shop/{shop_id}/link-npc")
+async def link_shop_npc(shop_id: str, req: LinkShopNpcRequest):
+    """Add a linked NPC to a shop and update both Docmost pages with cross-links."""
+    try:
+        shop_entry = history_store.get_entry(shop_id)
+        if shop_entry.get("type") != "Shop":
+            raise HTTPException(status_code=400, detail="Entry is not a Shop")
+
+        linked_npcs = shop_entry.get("linked_npcs", [])
+        linked_npc = {
+            "member_name": req.member_name,
+            "member_role": req.member_role,
+            "npc_name": req.npc_name,
+            "npc_docmost_url": req.npc_docmost_url,
+            "npc_history_id": req.npc_history_id,
+            "is_shopkeeper": req.is_shopkeeper,
+            "linked_at": datetime.now(timezone.utc).isoformat(),
+        }
+        linked_npcs = [n for n in linked_npcs if n.get("member_name") != req.member_name]
+        linked_npcs.append(linked_npc)
+        shop_entry["linked_npcs"] = linked_npcs
+        history_store.save_entry(shop_entry)
+
+        shop_page_id = shop_entry.get("docmost_page_id")
+        shop_page_url = shop_entry.get("docmost_url", "")
+
+        if shop_page_id:
+            from models import Shop
+            shop_obj = Shop(**shop_entry["shop"])
+            await docmost.save_shop(shop_obj, existing_page_id=shop_page_id, linked_npcs=linked_npcs)
+
+        shop_affiliation = {
+            "shop_name": shop_entry.get("name", ""),
+            "shop_url": shop_page_url,
+            "member_role": req.member_role,
+        }
+        try:
+            npc_entry = history_store.get_entry(req.npc_history_id)
+            npc_entry["shop_affiliation"] = shop_affiliation
+            history_store.save_entry(npc_entry)
+
+            npc_page_id = npc_entry.get("docmost_page_id")
+            if npc_page_id and npc_entry.get("character"):
+                char_obj = Character(**npc_entry["character"])
+                faction_affiliation = npc_entry.get("faction_affiliation")
+                await docmost.save_character(
+                    char_obj, "npcs",
+                    existing_page_id=npc_page_id,
+                    faction_affiliation=faction_affiliation,
+                    shop_affiliation=shop_affiliation,
+                )
+        except Exception as e:
+            logger.warning(f"Could not update NPC page with shop link: {e}")
+
+        return {"success": True, "linked_npcs": linked_npcs}
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Shop entry not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/shop/{shop_id}/regenerate-staff")
+async def regenerate_shop_staff_endpoint(shop_id: str, req: RegenerateShopStaffRequest):
+    """Generate a new shopkeeper or staff member for a shop. Returns member data only — caller saves."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+    try:
+        entry = history_store.get_entry(shop_id)
+        from models import Shop
+        shop_obj = Shop(**entry["shop"])
+        member_data = await generate_shop_staff(shop_obj, is_shopkeeper=req.is_shopkeeper)
+        return {"member": member_data}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Shop entry not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/generate-faction")
+async def api_generate_faction(req: GenerateFactionRequest):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+    try:
+        faction, usage = await generate_faction(req)
+
+        ts = datetime.now(timezone.utc)
+        entry_id = history_store.make_entry_id(ts, faction.name)
+        entry = {
+            "id": entry_id,
+            "timestamp": ts.isoformat(),
+            "type": "Faction",
+            "name": faction.name,
+            "faction_type": faction.faction_type,
+            "size": faction.size,
+            "alignment": faction.alignment,
+            "docmost_page_id": None,
+            "docmost_url": None,
+            "faction": faction.model_dump(),
+        }
+        history_store.save_entry(entry)
+
+        return {"faction": faction, "usage": usage, "history_id": entry_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/save-faction")
+async def api_save_faction(req: SaveFactionRequest):
+    try:
+        linked_npcs = []
+        if req.history_id:
+            try:
+                linked_npcs = history_store.get_entry(req.history_id).get("linked_npcs", [])
+            except Exception:
+                pass
+        page_id, docmost_url = await docmost.save_faction(
+            req.faction,
+            existing_page_id=_existing_page_id(req.history_id),
+            linked_npcs=linked_npcs or None,
+        )
+
+        if req.history_id:
+            try:
+                history_store.patch_entry(req.history_id, {
+                    "docmost_page_id": page_id,
+                    "docmost_url": docmost_url,
+                    "docmost_synced_at": datetime.now(timezone.utc).isoformat(),
+                    "docmost_out_of_sync": False,
+                })
+            except Exception:
+                pass
+
+        return {"success": True, "page_id": page_id, "docmost_url": docmost_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/faction/{faction_id}/link-npc")
+async def link_faction_npc(faction_id: str, req: LinkFactionNpcRequest):
+    """Add a linked NPC to a faction and update both Docmost pages with cross-links."""
+    try:
+        faction_entry = history_store.get_entry(faction_id)
+        if faction_entry.get("type") != "Faction":
+            raise HTTPException(status_code=400, detail="Entry is not a Faction")
+
+        # Add the NPC link to the faction history entry
+        linked_npcs = faction_entry.get("linked_npcs", [])
+        linked_npc = {
+            "member_name": req.member_name,
+            "member_role": req.member_role,
+            "npc_name": req.npc_name,
+            "npc_docmost_url": req.npc_docmost_url,
+            "npc_history_id": req.npc_history_id,
+            "linked_at": datetime.now(timezone.utc).isoformat(),
+        }
+        # Replace existing link for the same member if present
+        linked_npcs = [n for n in linked_npcs if n.get("member_name") != req.member_name]
+        linked_npcs.append(linked_npc)
+        faction_entry["linked_npcs"] = linked_npcs
+        history_store.save_entry(faction_entry)
+
+        faction_page_id = faction_entry.get("docmost_page_id")
+        faction_page_url = faction_entry.get("docmost_url", "")
+
+        # Re-save faction page with updated Connected NPCs section
+        if faction_page_id:
+            from models import Faction
+            faction_obj = Faction(**faction_entry["faction"])
+            await docmost.save_faction(faction_obj, existing_page_id=faction_page_id, linked_npcs=linked_npcs)
+
+        # Update NPC history entry and re-save NPC page with faction link
+        faction_affiliation = {
+            "faction_name": faction_entry.get("name", ""),
+            "faction_url": faction_page_url,
+            "member_role": req.member_role,
+        }
+        try:
+            npc_entry = history_store.get_entry(req.npc_history_id)
+            npc_entry["faction_affiliation"] = faction_affiliation
+            history_store.save_entry(npc_entry)
+
+            npc_page_id = npc_entry.get("docmost_page_id")
+            if npc_page_id and npc_entry.get("character"):
+                from models import Character
+                char_obj = Character(**npc_entry["character"])
+                folder_key = "npcs" if npc_entry.get("type") != "Generic NPC" else "npcs"
+                await docmost.save_character(
+                    char_obj, folder_key,
+                    existing_page_id=npc_page_id,
+                    faction_affiliation=faction_affiliation,
+                )
+        except Exception as e:
+            logger.warning(f"Could not update NPC page with faction link: {e}")
+
+        return {"success": True, "linked_npcs": linked_npcs}
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Faction entry not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/faction/{faction_id}/regenerate-member")
+async def regenerate_faction_member_endpoint(faction_id: str, req: RegenerateMemberRequest):
+    """Generate a new leader or notable member for a faction. Returns member data only — caller saves."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+    try:
+        entry = history_store.get_entry(faction_id)
+        from models import Faction
+        faction_obj = Faction(**entry["faction"])
+        member_data = await generate_faction_member(faction_obj, is_leader=req.is_leader)
+        return {"member": member_data}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Faction entry not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/history/{entry_id}/update")
 async def update_history_entry(entry_id: str, req: UpdateEntryRequest):
     try:
         entry = history_store.get_entry(entry_id)
-        obj_key = {"Character": "character", "Generic NPC": "character", "Item": "item", "Shop": "shop"}.get(entry.get("type", ""))
+        obj_key = {"Character": "character", "Generic NPC": "character", "Item": "item", "Shop": "shop", "Faction": "faction"}.get(entry.get("type", ""))
         if obj_key and obj_key in entry:
             entry[obj_key].update(req.updates)
         # Keep top-level metadata in sync with edited fields
@@ -331,6 +599,10 @@ async def update_history_entry(entry_id: str, req: UpdateEntryRequest):
                     entry[k] = req.updates[k]
             if "items" in req.updates:
                 entry["item_count"] = len(req.updates["items"])
+        if obj_key == "faction":
+            for k in ("faction_type", "size", "alignment"):
+                if k in req.updates:
+                    entry[k] = req.updates[k]
         edited_at = datetime.now(timezone.utc).isoformat()
         entry["edited_at"] = edited_at
         out_of_sync = bool(entry.get("docmost_page_id"))

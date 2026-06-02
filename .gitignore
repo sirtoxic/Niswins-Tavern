@@ -1,28 +1,22 @@
 # Secrets — never commit these
 .env
-*.env
 config.yaml
 
+# Generated content
+history/
+
 # Python
-.venv/
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-.Python
+.venv/
+venv/
 *.egg-info/
-dist/
-build/
 
-# macOS
+# OS
 .DS_Store
-
-# Generation history (local data)
-history/
-
-# Claude Code
-.claude/
+Thumbs.db
 
 # IDE
+.vscode/settings.json
 .idea/
-.vscode/

@@ -117,6 +117,7 @@
       <button id="navForge" onclick="switchView('forge')" class="nav-btn nav-active"><i class="fa-solid fa-users mr-1"></i>NPCs</button>
       <button id="navItems" onclick="switchView('items')" class="nav-btn"><i class="fa-solid fa-flask-vial mr-1"></i>Items</button>
       <button id="navShops" onclick="switchView('shops')" class="nav-btn"><i class="fa-solid fa-store mr-1"></i>Shops</button>
+      <button id="navFactions" onclick="switchView('factions')" class="nav-btn"><i class="fa-solid fa-flag mr-1"></i>Factions</button>
       <button id="navHistory" onclick="switchView('history')" class="nav-btn"><i class="fa-solid fa-scroll mr-1"></i>History</button>
       <button id="navSettings" onclick="switchView('settings')" class="nav-btn"><i class="fa-solid fa-gear mr-1"></i>Settings</button>
     </nav>
@@ -551,6 +552,134 @@
 
   </div><!-- /viewShops -->
 
+  <!-- Factions View -->
+  <div id="viewFactions" class="hidden flex h-[calc(100vh-73px)]">
+
+    <!-- Left panel: form -->
+    <aside class="w-80 flex-shrink-0 border-r border-border overflow-y-auto p-4 space-y-4">
+      <div class="section-header"><i class="fa-solid fa-flag mr-1"></i>Faction Generator</div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Concept / Theme <span class="text-gray-600">(optional)</span></label>
+          <textarea id="factionConcept" rows="3" placeholder="e.g. A shadowy merchant guild that secretly controls the city's food supply…" class="input-field resize-none text-sm"></textarea>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Type</label>
+          <select id="factionType" class="input-field text-sm">
+            <option value="Government">Government</option>
+            <option value="Guild" selected>Guild</option>
+            <option value="Rebel Group">Rebel Group</option>
+            <option value="Traveling Group">Traveling Group</option>
+            <option value="Military Order">Military Order</option>
+            <option value="Criminal Syndicate">Criminal Syndicate</option>
+            <option value="Religious Order">Religious Order</option>
+            <option value="Secret Society">Secret Society</option>
+            <option value="Merchant Company">Merchant Company</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Size</label>
+            <select id="factionSize" class="input-field text-sm">
+              <option value="Tiny">Tiny (5–15)</option>
+              <option value="Small">Small (15–50)</option>
+              <option value="Medium" selected>Medium (50–200)</option>
+              <option value="Large">Large (200–1k)</option>
+              <option value="Massive">Massive (1k+)</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Alignment</label>
+            <select id="factionAlignment" class="input-field text-sm">
+              <option>Lawful Good</option>
+              <option>Neutral Good</option>
+              <option>Chaotic Good</option>
+              <option>Lawful Neutral</option>
+              <option selected>True Neutral</option>
+              <option>Chaotic Neutral</option>
+              <option>Lawful Evil</option>
+              <option>Neutral Evil</option>
+              <option>Chaotic Evil</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Wealth</label>
+            <select id="factionWealth" class="input-field text-sm">
+              <option value="Poor">Poor</option>
+              <option value="Struggling">Struggling</option>
+              <option value="Moderate" selected>Moderate</option>
+              <option value="Wealthy">Wealthy</option>
+              <option value="Extremely Wealthy">Extremely Wealthy</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Reputation</label>
+            <select id="factionReputation" class="input-field text-sm">
+              <option value="Beloved">Beloved</option>
+              <option value="Respected">Respected</option>
+              <option value="Neutral" selected>Neutral</option>
+              <option value="Suspicious">Suspicious</option>
+              <option value="Feared">Feared</option>
+              <option value="Despised">Despised</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Region / Territory <span class="text-gray-600">(optional)</span></label>
+          <input id="factionRegion" type="text" placeholder="e.g. The docks of Saltmere, Northern Mountains…" class="input-field text-sm" />
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
+          <textarea id="factionNotes" rows="2" placeholder="Founded by a disgraced noble, rivals with the city watch…" class="input-field resize-none text-sm"></textarea>
+        </div>
+
+        <button id="generateFactionBtn" onclick="generateFaction()" class="btn-primary w-full flex items-center justify-center gap-2">
+          <svg id="generateFactionSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span id="generateFactionBtnText">Generate Faction</span>
+        </button>
+        <div id="factionTokenUsage" class="hidden flex items-center justify-center gap-1.5 text-xs text-gray-500 pt-1"></div>
+      </div>
+
+      <!-- Save section (shown after generation) -->
+      <div id="factionSaveSection" class="hidden space-y-2 pt-2 border-t border-border">
+        <div class="section-header">Save to Docmost</div>
+        <p class="text-xs text-gray-500">Filed under <span class="text-gold">Factions → [Type]</span></p>
+        <button onclick="saveFaction()" id="saveFactionBtn" class="btn-secondary w-full flex items-center justify-center gap-2">
+          <svg id="saveFactionSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span id="saveFactionBtnText">Save to Docmost</span>
+        </button>
+        <div id="saveFactionResult" class="hidden text-xs text-center py-1"></div>
+      </div>
+    </aside>
+
+    <!-- Right panel: faction sheet -->
+    <main class="flex-1 overflow-y-auto p-6">
+      <div id="factionPlaceholder" class="h-full flex items-center justify-center text-gray-600">
+        <div class="text-center">
+          <div class="text-6xl mb-4"><i class="fa-solid fa-flag"></i></div>
+          <p class="text-lg">Fill in the form and generate a faction</p>
+          <p class="text-sm mt-1">The faction profile will appear here</p>
+        </div>
+      </div>
+      <div id="factionSheet" class="hidden space-y-4"></div>
+    </main>
+
+  </div><!-- /viewFactions -->
+
   <!-- History View -->
   <div id="viewHistory" class="hidden flex h-[calc(100vh-73px)]">
 
@@ -752,6 +881,15 @@
               <button onclick="testPageUrl('Items', 'settingFolderUrlItems')" class="btn-secondary text-xs px-3 flex-shrink-0">Test</button>
             </div>
             <div id="testResultItems" class="hidden text-xs mt-1"></div>
+          </div>
+
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Factions <span class="text-gray-600">(factions are saved as sub-pages by type)</span></label>
+            <div class="flex gap-2">
+              <input id="settingFolderUrlFactions" type="url" placeholder="https://wiki.example.com/s/…/p/…" class="input-field text-xs flex-1 font-mono" />
+              <button onclick="testPageUrl('Factions', 'settingFolderUrlFactions')" class="btn-secondary text-xs px-3 flex-shrink-0">Test</button>
+            </div>
+            <div id="testResultFactions" class="hidden text-xs mt-1"></div>
           </div>
         </div>
       </div>

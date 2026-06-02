@@ -1,3 +1,16 @@
+# models.py
+# Pydantic data models for every generator in Niswins Tavern.
+#
+# Character / NPC:   GenerateRequest, SaveRequest, Character (with full D&D 5e stat block —
+#                    ability scores, AC, HP, saving throws, skills, attacks, spellcasting,
+#                    features, equipment, proficiencies).
+# Item:              GenerateItemRequest, SaveItemRequest, Item (bonuses, abilities, attunement).
+# Shop:              GenerateShopRequest, SaveShopRequest, Shop, ShopKeeper, ShopItem, ShopStaff,
+#                    LinkShopNpcRequest, RegenerateShopStaffRequest.
+# Faction:           GenerateFactionRequest, SaveFactionRequest, Faction, FactionLeader,
+#                    FactionMember, LinkFactionNpcRequest, RegenerateMemberRequest.
+# Settings / Util:   SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest.
+
 from pydantic import BaseModel
 from typing import Optional
 
@@ -271,6 +284,12 @@ class SaveItemRequest(BaseModel):
 # Shop models
 # ---------------------------------------------------------------------------
 
+class ShopStaff(BaseModel):
+    name: str
+    role: str
+    description: str
+
+
 class ShopItem(BaseModel):
     name: str
     item_type: str
@@ -300,6 +319,7 @@ class Shop(BaseModel):
     atmosphere: str = ""
     shopkeeper: ShopKeeper
     items: list[ShopItem]
+    staff: list[ShopStaff] = []
 
 
 class GenerateShopRequest(BaseModel):
@@ -317,6 +337,87 @@ class SaveShopRequest(BaseModel):
     history_id: Optional[str] = None
 
 
+class LinkShopNpcRequest(BaseModel):
+    member_name: str
+    member_role: str
+    npc_name: str
+    npc_docmost_url: str
+    npc_history_id: str
+    is_shopkeeper: bool = False
+
+
+class RegenerateShopStaffRequest(BaseModel):
+    is_shopkeeper: bool = False
+    staff_index: Optional[int] = None  # None = add new staff member
+
+
+# ---------------------------------------------------------------------------
+# Faction models
+# ---------------------------------------------------------------------------
+
+class FactionLeader(BaseModel):
+    name: str
+    title: str
+    race: str
+    description: str
+
+
+class FactionMember(BaseModel):
+    name: str
+    role: str
+    description: str
+
+
+class Faction(BaseModel):
+    name: str
+    faction_type: str
+    size: str
+    alignment: str
+    motto: str
+    overview: str
+    history: str
+    goals: list[str]
+    methods: list[str]
+    headquarters: str
+    wealth: str
+    public_reputation: str
+    secrets: list[str]
+    symbols: str
+    leader: FactionLeader
+    notable_members: list[FactionMember]
+    allies: list[str]
+    enemies: list[str]
+
+
+class GenerateFactionRequest(BaseModel):
+    concept: str = ""
+    faction_type: str = "Guild"
+    size: str = "Medium"
+    alignment: str = "True Neutral"
+    wealth: str = "Moderate"
+    reputation: str = "Neutral"
+    region: str = ""
+    additional_notes: str = ""
+
+
+class SaveFactionRequest(BaseModel):
+    faction: Faction
+    history_id: Optional[str] = None
+
+
+class LinkFactionNpcRequest(BaseModel):
+    member_name: str
+    member_role: str
+    npc_name: str
+    npc_docmost_url: str
+    npc_history_id: str
+
+
+class RegenerateMemberRequest(BaseModel):
+    is_leader: bool = False
+    member_index: Optional[int] = None  # None = add new notable member
+
+
 class SettingsUpdate(BaseModel):
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-6"
@@ -328,6 +429,7 @@ class SettingsUpdate(BaseModel):
     folder_url_locations: str = ""
     folder_url_encounters: str = ""
     folder_url_items: str = ""
+    folder_url_factions: str = ""
 
 
 class TestPageUrlRequest(BaseModel):

@@ -1,9 +1,24 @@
+# shop_generator.py
+# Generates shops and their contents for D&D 5e via Claude.
+#
+# Features:
+#   - Shop generation: configurable physical form (building / stall / cart / ship / cave),
+#     category (Blacksmith, Alchemist, General, etc.), item count, rarity mix, and detail level
+#     (low / medium / high description length).
+#   - Under-the-table mode: marks illegal or stolen items separately for the DM.
+#   - Shopkeeper: name, race, class/occupation, gender, appearance, personality, motivation, and
+#     a pre-filled NPC concept prompt for full character generation.
+#   - Each shop item includes a pre-filled concept prompt for full item generation.
+#   - Staff generation: generate_shop_staff() produces a new shopkeeper or staff member
+#     (assistant, guard, apprentice, etc.) using the shop's name, category, and atmosphere as
+#     context, allowing Add / Regenerate from the shop sheet.
+
 from __future__ import annotations
 
 import json
 import os
 import anthropic
-from models import Shop, GenerateShopRequest
+from models import Shop, GenerateShopRequest, ShopStaff
 from character_generator import _get_model_pricing, MODEL
 
 _SYSTEM_PROMPT = """You are a D&D 5e worldbuilder specialising in creating vivid, memorable shops and merchants for tabletop RPGs. You produce detailed, flavourful content as structured JSON.
@@ -124,3 +139,48 @@ async def generate_shop(req: GenerateShopRequest) -> tuple:
     }
 
     return Shop(**data), usage
+
+
+async def generate_shop_staff(shop: Shop, is_shopkeeper: bool = False) -> dict:
+    """Generate a new shopkeeper or staff member for an existing shop. Returns raw dict."""
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    overview_excerpt = shop.description[:400] if shop.description else ""
+
+    if is_shopkeeper:
+        schema = (
+            '{"name": "string", "race": "string — D&D 5e race", '
+            '"character_class": "string — occupation e.g. Commoner, Merchant, Wizard", '
+            '"gender": "string — optional, may be empty", '
+            '"appearance": "string — 1-2 sentences", '
+            '"personality": "string — 1-2 sentences", '
+            '"motivation": "string — one sentence", '
+            '"concept": "string — punchy NPC concept prompt"}'
+        )
+        role_desc = "a new shopkeeper"
+    else:
+        schema = '{"name": "string", "role": "string — their job in the shop e.g. Assistant, Guard, Apprentice", "description": "string — 1 sentence on what makes them memorable"}'
+        role_desc = "a new staff member (not the shopkeeper)"
+
+    prompt = f"""Generate {role_desc} for the following shop. The character must fit the shop's theme and atmosphere.
+
+Shop: {shop.name}
+Category: {shop.category}
+Type: {shop.shop_type}
+Atmosphere: {shop.atmosphere}
+Description: {overview_excerpt}
+
+Return ONLY a JSON object matching this schema:
+{schema}"""
+
+    message = client.messages.create(
+        model=MODEL,
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    raw = message.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+
+    return json.loads(raw)

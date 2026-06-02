@@ -1,3 +1,16 @@
+# history_store.py
+# Persistent local storage for all generated content (characters, NPCs, items, shops, factions).
+#
+# Features:
+#   - Each entry is saved as an individual JSON file under history/ named
+#     {timestamp}_{slug}.json for easy browsing and backup.
+#   - List view strips large data blobs (character, item, shop, faction objects) so the history
+#     sidebar loads quickly; full data is fetched on demand per entry.
+#   - Supports patch_entry() for targeted field updates (e.g. docmost_page_id, linked_npcs)
+#     without rewriting unrelated fields.
+#   - Entry IDs are deterministic slugs derived from the timestamp and item name, making them
+#     human-readable in the filesystem.
+
 from __future__ import annotations
 import json
 import re

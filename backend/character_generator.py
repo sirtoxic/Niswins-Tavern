@@ -1,3 +1,16 @@
+# character_generator.py
+# Generates D&D 5e characters and generic NPCs via Claude.
+#
+# Features:
+#   - Full stat block generation: ability scores, AC breakdown, HP, saving throws, all 18 skills,
+#     attacks with to-hit and damage, spellcasting (spell slots + known spells), features & traits,
+#     equipment, and proficiencies.
+#   - Adjustable backstory depth: short / medium / long.
+#   - Generic NPC mode: streamlined output without full combat stats (suitable for shopkeepers,
+#     town folk, quest givers, etc.).
+#   - Model pricing lookup via LiteLLM price list (cached per session) for cost reporting.
+#   - Cost and token usage returned with every generation for display in the UI.
+
 import json
 import os
 import httpx

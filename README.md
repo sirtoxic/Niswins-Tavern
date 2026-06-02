@@ -211,6 +211,12 @@ Content is saved in the following hierarchy:
 | Items | `Items / {item_type} / Item Name` |
 | Shops | `Locations / Shops / Shop Name` |
 
+### Known limitation: page revision history
+
+Docmost's page revision history is driven by its collaborative editing engine (Y.js), not its REST API. When Niswins Tavern creates or re-syncs a page via the API, the content is updated correctly but Docmost does not record a new revision in the page's history panel.
+
+As a workaround, every page includes a timestamp footer (*Created* or *Re-synced via Niswins Tavern · date*) so you can always tell when the content was last written from the app.
+
 ---
 
 ## Running Without Docker (Development)

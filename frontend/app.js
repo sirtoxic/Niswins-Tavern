@@ -1,5 +1,37 @@
 'use strict';
 
+// app.js
+// Vanilla JS single-page application for Niswins Tavern.
+//
+// Views (hash-routed):
+//   #npcs      — NPC / Character generator: race, class, level, alignment, backstory depth,
+//                concept notes; full D&D 5e stat sheet; save to Docmost; Foundry export.
+//   #items     — Magic item generator: type, rarity, level range, magic theme, material,
+//                damage type, stat bonus; full item sheet with abilities and lore.
+//   #shops     — Shop generator: physical form, category, item count, rarity mix, detail level,
+//                under-the-table toggle; shopkeeper + stock sheet; per-item "Generate Item" button;
+//                shopkeeper and staff "Generate NPC" buttons (synced shops only);
+//                Add / Regenerate / Remove for staff; two-way Docmost NPC linking.
+//   #factions  — Faction generator: type, size, alignment, wealth, reputation, region;
+//                full faction sheet with leader, notable members, goals, methods, secrets;
+//                per-member "Generate NPC" buttons (synced factions only);
+//                Add / Regenerate / Remove for members; two-way Docmost NPC linking.
+//   #history   — Searchable / filterable list of all generated content; edit mode for in-place
+//                field updates; re-sync to Docmost; view in Docmost link.
+//   #settings  — Anthropic API key, Claude model selector, Docmost connection (URL / credentials),
+//                per-type Docmost folder URL configuration with live test.
+//
+// Key patterns:
+//   - currentCharacter / currentItem / currentShop / currentFaction hold the active generated
+//     object; *HistoryId tracks the corresponding history entry ID.
+//   - currentShopSynced / currentFactionSynced control whether Generate NPC buttons are shown.
+//   - _modalFactionContext / _modalShopContext carry context into the NPC generation modal so the
+//     backstory includes faction/shop membership; additional_notes is injected into the API call.
+//   - _escHtml() / _escAttr() sanitise dynamic strings before injection into innerHTML / onclick.
+//   - onclick attributes use _escAttr(JSON.stringify(value)) — NOT JSON.stringify(_escAttr(value))
+//     — so quote characters are HTML-entity-escaped inside the attribute and decoded correctly
+//     by the browser before the JS handler runs.
+
 let currentCharacter = null;
 let currentHistoryId = null;
 let selectedDetail = 'medium';
@@ -8,7 +40,13 @@ let selectedHistoryEntryId = null;
 
 let currentItem = null;
 let currentItemHistoryId = null;
-let selectedHistoryEntryType = null;  // 'Character', 'Generic NPC', 'Item', etc.
+let currentFaction = null;
+let currentFactionHistoryId = null;
+let currentFactionSynced = false;
+let currentFactionDocmostUrl = null;
+let currentShopSynced = false;
+let currentShopDocmostUrl = null;
+let selectedHistoryEntryType = null;  // 'Character', 'Generic NPC', 'Item', 'Shop', 'Faction'
 
 let historyActiveTag = null;
 
@@ -57,18 +95,20 @@ function setDetail(level) {
 // View switching
 // -----------------------------------------------------------------------
 
-const VIEW_HASHES = { forge: '#npcs', items: '#items', shops: '#shops', history: '#history', settings: '#settings' };
-const HASH_VIEWS = { '#npcs': 'forge', '#items': 'items', '#shops': 'shops', '#history': 'history', '#settings': 'settings' };
+const VIEW_HASHES = { forge: '#npcs', items: '#items', shops: '#shops', factions: '#factions', history: '#history', settings: '#settings' };
+const HASH_VIEWS = { '#npcs': 'forge', '#items': 'items', '#shops': 'shops', '#factions': 'factions', '#history': 'history', '#settings': 'settings' };
 
 function switchView(view, updateHash = true) {
   document.getElementById('viewForge').classList.toggle('hidden', view !== 'forge');
   document.getElementById('viewItems').classList.toggle('hidden', view !== 'items');
   document.getElementById('viewShops').classList.toggle('hidden', view !== 'shops');
+  document.getElementById('viewFactions').classList.toggle('hidden', view !== 'factions');
   document.getElementById('viewHistory').classList.toggle('hidden', view !== 'history');
   document.getElementById('viewSettings').classList.toggle('hidden', view !== 'settings');
   document.getElementById('navForge').classList.toggle('nav-active', view === 'forge');
   document.getElementById('navItems').classList.toggle('nav-active', view === 'items');
   document.getElementById('navShops').classList.toggle('nav-active', view === 'shops');
+  document.getElementById('navFactions').classList.toggle('nav-active', view === 'factions');
   document.getElementById('navHistory').classList.toggle('nav-active', view === 'history');
   document.getElementById('navSettings').classList.toggle('nav-active', view === 'settings');
   if (updateHash && location.hash !== (VIEW_HASHES[view] || '')) {
@@ -189,6 +229,7 @@ function renderHistoryList() {
       const extra = [
         e.type, e.race, e.character_class, e.alignment,
         e.item_type, e.rarity,
+        e.faction_type, e.size,
         e.level != null ? String(e.level) : null,
         e.target_level_min != null ? String(e.target_level_min) : null,
         e.target_level_max != null ? String(e.target_level_max) : null,
@@ -248,19 +289,32 @@ async function openHistoryEntry(entryId) {
 
     const isItem = entry.type === 'Item';
     const isShop = entry.type === 'Shop';
+    const isFaction = entry.type === 'Faction';
 
     if (isItem) {
       currentItem = entry.item;
       currentCharacter = null;
       currentShop = null;
+      currentFaction = null;
     } else if (isShop) {
       currentShop = entry.shop;
+      currentShopSynced = !!entry.docmost_page_id;
+      currentShopDocmostUrl = entry.docmost_url || null;
       currentItem = null;
       currentCharacter = null;
+      currentFaction = null;
+    } else if (isFaction) {
+      currentFaction = entry.faction;
+      currentFactionSynced = !!entry.docmost_page_id;
+      currentFactionDocmostUrl = entry.docmost_url || null;
+      currentItem = null;
+      currentCharacter = null;
+      currentShop = null;
     } else {
       currentCharacter = entry.character;
       currentItem = null;
       currentShop = null;
+      currentFaction = null;
     }
 
     // Meta line
@@ -270,6 +324,8 @@ async function openHistoryEntry(entryId) {
       metaHtml += `<span class="ml-2">${entry.item_type} · <span style="color:${rarityColor}">${entry.rarity}</span> · Levels ${entry.target_level_min}–${entry.target_level_max}</span>`;
     } else if (isShop) {
       metaHtml += `<span class="ml-2">${entry.category} ${entry.shop_type} · ${entry.item_count} items</span>`;
+    } else if (isFaction) {
+      metaHtml += `<span class="ml-2">${entry.faction_type} · ${entry.size} · ${entry.alignment}</span>`;
     } else {
       metaHtml += `<span class="ml-2">${entry.character_class} · ${entry.race} · Level ${entry.level} · ${entry.alignment}</span>`;
     }
@@ -277,8 +333,8 @@ async function openHistoryEntry(entryId) {
     document.getElementById('historyEntryMeta').innerHTML = metaHtml;
 
     // Show/hide action bar elements based on entry type
-    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isItem || isShop);
-    document.getElementById('historySaveFolder').classList.toggle('hidden', isItem || isShop);
+    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isItem || isShop || isFaction);
+    document.getElementById('historySaveFolder').classList.toggle('hidden', isItem || isShop || isFaction);
 
     // Docmost link
     const link = document.getElementById('historyDocmostLink');
@@ -296,10 +352,12 @@ async function openHistoryEntry(entryId) {
 
     const historySheet = document.getElementById('historySheet');
     historySheet.innerHTML = '';
-    if (isItem) {
+    if (isFaction) {
+      renderFactionSheet(entry.faction, historySheet, currentFactionSynced, entry.linked_npcs || []);
+    } else if (isItem) {
       renderItemSheet(entry.item, historySheet);
     } else if (isShop) {
-      _renderShopContent(entry.shop, historySheet);
+      _renderShopContent(entry.shop, historySheet, currentShopSynced, entry.linked_npcs || []);
     } else {
       renderSheet(entry.character, historySheet);
     }
@@ -317,6 +375,7 @@ function _typeColor(type) {
     'Encounter':   '#8b1a1a',
     'Item':        '#a335ee',
     'Shop':        '#2e86ab',
+    'Faction':     '#e07b39',
   };
   return map[type] || '#8a7560';
 }
@@ -328,6 +387,9 @@ function _entrySubtitle(entry) {
   }
   if (entry.type === 'Shop') {
     return `${entry.category} ${entry.shop_type} · ${entry.item_count ?? '?'} items`;
+  }
+  if (entry.type === 'Faction') {
+    return `${entry.faction_type} · ${entry.size} · ${entry.alignment}`;
   }
   return `${entry.character_class} · ${entry.race} · Lvl ${entry.level}`;
 }
@@ -359,8 +421,9 @@ async function loadSettings() {
     document.getElementById('settingFolderUrlLocations').value = s.folder_url_locations || '';
     document.getElementById('settingFolderUrlEncounters').value = s.folder_url_encounters || '';
     document.getElementById('settingFolderUrlItems').value = s.folder_url_items || '';
+    document.getElementById('settingFolderUrlFactions').value = s.folder_url_factions || '';
     // Clear any stale test results
-    for (const key of ['Npcs', 'Bestiary', 'Locations', 'Encounters', 'Items']) {
+    for (const key of ['Npcs', 'Bestiary', 'Locations', 'Encounters', 'Items', 'Factions']) {
       document.getElementById(`testResult${key}`).classList.add('hidden');
     }
   } catch (e) {
@@ -384,6 +447,7 @@ async function saveSettings() {
     folder_url_locations: document.getElementById('settingFolderUrlLocations').value.trim(),
     folder_url_encounters: document.getElementById('settingFolderUrlEncounters').value.trim(),
     folder_url_items: document.getElementById('settingFolderUrlItems').value.trim(),
+    folder_url_factions: document.getElementById('settingFolderUrlFactions').value.trim(),
   };
 
   try {
@@ -565,7 +629,9 @@ async function saveCharacter() {
 async function saveFromHistory() {
   const isItem = selectedHistoryEntryType === 'Item';
   const isShop = selectedHistoryEntryType === 'Shop';
-  if (isItem ? !currentItem : isShop ? !currentShop : !currentCharacter) return;
+  const isFaction = selectedHistoryEntryType === 'Faction';
+  const current = isItem ? currentItem : isShop ? currentShop : isFaction ? currentFaction : currentCharacter;
+  if (!current) return;
 
   setBusy('historySaveBtn', 'historySaveSpinner', 'historySaveBtnText', true, 'Saving…');
   const resultEl = document.getElementById('historySaveResult');
@@ -579,6 +645,9 @@ async function saveFromHistory() {
     } else if (isShop) {
       endpoint = '/api/save-shop';
       body = { shop: currentShop, history_id: currentHistoryId };
+    } else if (isFaction) {
+      endpoint = '/api/save-faction';
+      body = { faction: currentFaction, history_id: currentHistoryId };
     } else {
       endpoint = '/api/save';
       body = { character: currentCharacter, folder: document.getElementById('historySaveFolder').value, history_id: currentHistoryId };
@@ -601,6 +670,21 @@ async function saveFromHistory() {
       entry.docmost_out_of_sync = false;
       renderHistoryList();
       _updateHistorySyncStatus(entry);
+    }
+
+    // Update sync state so Generate NPC buttons become visible
+    if (isShop) {
+      currentShopSynced = true;
+      currentShopDocmostUrl = data.docmost_url || null;
+      const historySheet = document.getElementById('historySheet');
+      historySheet.innerHTML = '';
+      _renderShopContent(currentShop, historySheet, true, entry?.linked_npcs || []);
+    } else if (isFaction) {
+      currentFactionSynced = true;
+      currentFactionDocmostUrl = data.docmost_url || null;
+      const historySheet = document.getElementById('historySheet');
+      historySheet.innerHTML = '';
+      renderFactionSheet(currentFaction, historySheet, true, entry?.linked_npcs || []);
     }
 
     if (data.docmost_url) {
@@ -941,6 +1025,7 @@ function _collectShopEdits() {
       concept: currentShop?.shopkeeper?.concept || '',
     },
     items,
+    staff: currentShop?.staff || [],
   };
 }
 
@@ -959,6 +1044,8 @@ function enterEditMode() {
     sheet.appendChild(_buildItemEditForm(currentItem));
   } else if (selectedHistoryEntryType === 'Shop') {
     sheet.appendChild(_buildShopEditForm(currentShop));
+  } else if (selectedHistoryEntryType === 'Faction') {
+    sheet.appendChild(_buildFactionEditForm(currentFaction));
   } else {
     sheet.appendChild(_buildCharacterEditForm(currentCharacter));
   }
@@ -973,6 +1060,10 @@ function exitEditMode(reRender = true) {
     sheet.innerHTML = '';
     if (selectedHistoryEntryType === 'Item') renderItemSheet(currentItem, sheet);
     else if (selectedHistoryEntryType === 'Shop') _renderShopContent(currentShop, sheet);
+    else if (selectedHistoryEntryType === 'Faction') {
+      const fEntry = historyEntries.find(e => e.id === currentHistoryId);
+      renderFactionSheet(currentFaction, sheet, currentFactionSynced, fEntry?.linked_npcs || []);
+    }
     else renderSheet(currentCharacter, sheet);
   }
 
@@ -984,6 +1075,7 @@ async function saveEdit() {
   let updates;
   if (selectedHistoryEntryType === 'Item') updates = _collectItemEdits();
   else if (selectedHistoryEntryType === 'Shop') updates = _collectShopEdits();
+  else if (selectedHistoryEntryType === 'Faction') updates = _collectFactionEdits();
   else updates = _collectCharacterEdits();
 
   const btn = document.getElementById('historyEditSaveBtn');
@@ -1002,6 +1094,7 @@ async function saveEdit() {
     // Merge updates into in-memory current object
     if (selectedHistoryEntryType === 'Item') currentItem = { ...currentItem, ...updates };
     else if (selectedHistoryEntryType === 'Shop') currentShop = { ...currentShop, ...updates };
+    else if (selectedHistoryEntryType === 'Faction') currentFaction = { ...currentFaction, ...updates };
     else currentCharacter = { ...currentCharacter, ...updates };
 
     // Update in-memory history list entry metadata
@@ -1013,6 +1106,9 @@ async function saveEdit() {
       if (updates.shop_type) entry.shop_type = updates.shop_type;
       if (updates.category) entry.category = updates.category;
       if (updates.items) entry.item_count = updates.items.length;
+      if (updates.faction_type) entry.faction_type = updates.faction_type;
+      if (updates.size) entry.size = updates.size;
+      if (updates.alignment) entry.alignment = updates.alignment;
       entry.edited_at = data.edited_at;
       if (data.out_of_sync) entry.docmost_out_of_sync = true;
     }
@@ -1845,9 +1941,8 @@ function renderItemSheet(item, containerEl) {
 // Shop content renderer (used by both Shop view and History view)
 // -----------------------------------------------------------------------
 
-function _renderShopContent(shop, container) {
-  // Append mode — caller is responsible for clearing old content first
-  // (history view passes an empty div; shop view clears before calling)
+function _renderShopContent(shop, container, isSynced = false, linkedNpcs = []) {
+  // Append mode — caller clears old content before calling
 
   // Header
   const header = el('div', 'panel');
@@ -1877,25 +1972,71 @@ function _renderShopContent(shop, container) {
 
   // Shopkeeper
   const sk = shop.shopkeeper;
-  const skPanel = el('div', 'panel');
+  const skLinkedNpc = linkedNpcs.find(n => n.is_shopkeeper);
   const genderNote = sk.gender ? ` (${sk.gender})` : '';
-  const skHeader = el('div', 'flex items-start justify-between gap-3 mb-3');
-  skHeader.innerHTML = `
-    <div class="section-header" style="margin-bottom:0;border:none">The Shopkeeper</div>
-    <button onclick="useShopkeeperAsPrompt()" class="btn-secondary text-xs py-1 px-2 flex-shrink-0 flex items-center gap-1">
-      <i class="fa-solid fa-users"></i> Generate NPC
-    </button>
+  const skPanel = el('div', 'panel');
+  const skHeader = el('div', 'flex items-center gap-2 mb-3 flex-wrap');
+  skHeader.innerHTML = `<div class="section-header" style="margin-bottom:0;border:none;flex:1">The Shopkeeper</div>`;
+
+  const skBtns = el('div', 'flex gap-2 flex-shrink-0 flex-wrap');
+  skBtns.innerHTML = `
+    <button onclick="regenerateShopkeeperUI()" class="btn-secondary text-xs py-1 px-2 whitespace-nowrap"><i class="fa-solid fa-rotate mr-1"></i>Regenerate</button>
+    ${isSynced && !skLinkedNpc ? `<button onclick="openShopkeeperModal()" class="btn-secondary text-xs py-1 px-2 whitespace-nowrap"><i class="fa-solid fa-user-plus mr-1"></i>Generate NPC</button>` : ''}
   `;
+  skHeader.appendChild(skBtns);
   skPanel.appendChild(skHeader);
-  skPanel.innerHTML += `
-    <p class="text-sm font-bold text-parchment mb-1">${sk.name}
-      <span class="text-gray-500 font-normal text-xs ml-1">— ${sk.race}${genderNote}, ${sk.character_class}</span>
+
+  const skBody = el('div', '');
+  skBody.innerHTML = `
+    <p class="text-sm font-bold text-parchment mb-1">${_escHtml(sk.name)}
+      <span class="text-gray-500 font-normal text-xs ml-1">— ${_escHtml(sk.race)}${_escHtml(genderNote)}, ${_escHtml(sk.character_class)}</span>
     </p>
-    <p class="text-sm text-gray-300 mb-1">${sk.appearance}</p>
-    <p class="text-sm text-gray-300 mb-1">${sk.personality}</p>
-    ${sk.motivation ? `<p class="text-xs text-gray-500 italic mt-1">${sk.motivation}</p>` : ''}
+    <p class="text-sm text-gray-300 mb-1">${_escHtml(sk.appearance)}</p>
+    <p class="text-sm text-gray-300 mb-1">${_escHtml(sk.personality)}</p>
+    ${sk.motivation ? `<p class="text-xs text-gray-500 italic mt-1">${_escHtml(sk.motivation)}</p>` : ''}
   `;
+  if (skLinkedNpc) {
+    skBody.innerHTML += `<p class="text-xs text-emerald-400 mt-2"><i class="fa-solid fa-link mr-1"></i>${_escHtml(skLinkedNpc.npc_name)} — <a href="${_escHtml(skLinkedNpc.npc_docmost_url)}" target="_blank" class="underline">View in Docmost</a></p>`;
+  }
+  skPanel.appendChild(skBody);
   container.appendChild(skPanel);
+
+  // Staff
+  const staff = shop.staff || [];
+  const staffPanel = el('div', 'panel');
+  const staffHeaderRow = el('div', 'flex items-center gap-2 mb-3 flex-wrap');
+  staffHeaderRow.innerHTML = `<div class="section-header" style="margin-bottom:0;border:none;flex:1">Staff</div>`;
+  const addStaffBtn = el('button', 'btn-secondary text-xs py-1 px-2 whitespace-nowrap flex-shrink-0', '<i class="fa-solid fa-plus mr-1"></i>Add Staff');
+  addStaffBtn.onclick = () => addShopStaffUI();
+  staffHeaderRow.appendChild(addStaffBtn);
+  staffPanel.appendChild(staffHeaderRow);
+
+  if (staff.length === 0) {
+    staffPanel.innerHTML += `<p class="text-xs text-gray-500 italic">No staff added yet.</p>`;
+  } else {
+    const staffList = el('div', 'space-y-3');
+    staff.forEach((member, idx) => {
+      const memberLinkedNpc = linkedNpcs.find(n => !n.is_shopkeeper && n.member_name === member.name);
+      const row = el('div', 'flex items-start gap-3');
+      const info = el('div', 'flex-1 min-w-0');
+      info.innerHTML = `
+        <p class="text-sm font-bold text-parchment">${_escHtml(member.name)} <span class="text-gray-500 font-normal text-xs">— ${_escHtml(member.role)}</span></p>
+        <p class="text-xs text-gray-400 mt-0.5">${_escHtml(member.description)}</p>
+        ${memberLinkedNpc ? `<p class="text-xs text-emerald-400 mt-1"><i class="fa-solid fa-link mr-1"></i>${_escHtml(memberLinkedNpc.npc_name)} — <a href="${_escHtml(memberLinkedNpc.npc_docmost_url)}" target="_blank" class="underline">View in Docmost</a></p>` : ''}
+      `;
+      const btns = el('div', 'flex gap-1 flex-shrink-0 flex-wrap');
+      btns.innerHTML = `
+        <button onclick="regenerateShopStaffUI(${idx})" class="btn-secondary text-xs py-1 px-2 whitespace-nowrap"><i class="fa-solid fa-rotate"></i></button>
+        ${isSynced && !memberLinkedNpc ? `<button onclick="openShopStaffModal(${_escAttr(JSON.stringify(member.name))},${_escAttr(JSON.stringify(member.role))})" class="btn-secondary text-xs py-1 px-2 whitespace-nowrap"><i class="fa-solid fa-user-plus mr-1"></i>NPC</button>` : ''}
+        <button onclick="removeShopStaffUI(${idx})" class="text-red-500 hover:text-red-300 text-xs py-1 px-2 whitespace-nowrap"><i class="fa-solid fa-trash"></i></button>
+      `;
+      row.appendChild(info);
+      row.appendChild(btns);
+      staffList.appendChild(row);
+    });
+    staffPanel.appendChild(staffList);
+  }
+  container.appendChild(staffPanel);
 
   // Stock
   const regular = shop.items.filter(i => !i.is_under_table);
@@ -1920,6 +2061,23 @@ function _renderShopContent(shop, container) {
     under.forEach(item => list.appendChild(_shopItemCard(item, shop.items.indexOf(item))));
     utPanel.appendChild(list);
     container.appendChild(utPanel);
+  }
+
+  // Connected NPCs summary
+  if (linkedNpcs.length > 0) {
+    const npcPanel = el('div', 'panel');
+    npcPanel.innerHTML = `<div class="section-header">Connected NPCs</div>`;
+    const npcList = el('div', 'space-y-1');
+    for (const npc of linkedNpcs) {
+      const line = el('p', 'text-sm text-gray-300');
+      line.innerHTML = `<span class="font-bold text-parchment">${_escHtml(npc.npc_name)}</span> — ${_escHtml(npc.member_role)}`;
+      if (npc.npc_docmost_url) {
+        line.innerHTML += ` <a href="${_escHtml(npc.npc_docmost_url)}" target="_blank" class="text-xs text-blue-400 underline ml-1">View in Docmost</a>`;
+      }
+      npcList.appendChild(line);
+    }
+    npcPanel.appendChild(npcList);
+    container.appendChild(npcPanel);
   }
 }
 
@@ -2019,10 +2177,12 @@ async function generateShop() {
     const data = await r.json();
     currentShop = data.shop;
     currentShopHistoryId = data.history_id ?? null;
+    currentShopSynced = false;
+    currentShopDocmostUrl = null;
 
     document.getElementById('shopPlaceholder').classList.add('hidden');
     document.getElementById('shopSheet').classList.remove('hidden');
-    renderShopSheet(currentShop);
+    renderShopSheet(currentShop, false, []);
     _showTokenUsage(data.usage, 'shopTokenUsage');
   } catch (e) {
     alert(`Error: ${e.message}`);
@@ -2031,7 +2191,7 @@ async function generateShop() {
   }
 }
 
-function renderShopSheet(shop) {
+function renderShopSheet(shop, isSynced = false, linkedNpcs = []) {
   // Reset save state
   document.getElementById('shopSaveResult').classList.add('hidden');
   document.getElementById('shopDocmostLink').classList.add('hidden');
@@ -2043,8 +2203,7 @@ function renderShopSheet(shop) {
   const container = document.getElementById('shopSheet');
   while (container.children.length > 2) container.removeChild(container.lastChild);
 
-  // Render shop content directly into shopSheet — _renderShopContent appends to it
-  _renderShopContent(shop, container);
+  _renderShopContent(shop, container, isSynced, linkedNpcs);
 }
 
 async function saveShop() {
@@ -2067,6 +2226,11 @@ async function saveShop() {
       entry.docmost_page_id = data.page_id;
       entry.docmost_url = data.docmost_url;
     }
+
+    currentShopSynced = true;
+    currentShopDocmostUrl = data.docmost_url || null;
+    // Re-render so Generate NPC buttons appear
+    renderShopSheet(currentShop, true, entry?.linked_npcs || []);
 
     resultEl.textContent = `✓ Saved to Locations / Shops`;
     resultEl.className = 'text-xs text-center py-1 text-green-400';
@@ -2092,10 +2256,123 @@ function useShopItemAsPrompt(itemIndex) {
   openGenModal('item', item);
 }
 
-function useShopkeeperAsPrompt() {
+function openShopkeeperModal() {
   const sk = currentShop?.shopkeeper;
   if (!sk) return;
+  const shopId = currentShopHistoryId || currentHistoryId;
+  _modalShopContext = {
+    shopHistoryId: shopId,
+    memberName: sk.name,
+    memberRole: sk.character_class || 'Shopkeeper',
+    isShopkeeper: true,
+    additionalNotes: `This NPC is the shopkeeper of ${currentShop.name}, a ${currentShop.category} ${currentShop.shop_type}. ${currentShop.atmosphere || ''}`.trim(),
+  };
   openGenModal('npc', sk);
+}
+
+function openShopStaffModal(staffName, staffRole) {
+  if (!currentShop) return;
+  const shopId = currentShopHistoryId || currentHistoryId;
+  _modalShopContext = {
+    shopHistoryId: shopId,
+    memberName: staffName,
+    memberRole: staffRole,
+    isShopkeeper: false,
+    additionalNotes: `This NPC works at ${currentShop.name}, a ${currentShop.category} ${currentShop.shop_type}, as ${staffRole}. ${currentShop.atmosphere || ''}`.trim(),
+  };
+  openGenModal('npc', { name: staffName, concept: `${staffRole} at ${currentShop.name}`, race: '', character_class: 'Commoner' });
+}
+
+async function regenerateShopkeeperUI() {
+  if (!currentShop) return;
+  const shopId = currentShopHistoryId || currentHistoryId;
+  if (!shopId) return;
+  try {
+    const r = await fetch(`/api/shop/${shopId}/regenerate-staff`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_shopkeeper: true }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Failed');
+    currentShop.shopkeeper = { ...currentShop.shopkeeper, ...data.member };
+    await _saveShopStaffChanges(shopId);
+  } catch (e) {
+    alert(`Regenerate failed: ${e.message}`);
+  }
+}
+
+async function regenerateShopStaffUI(staffIndex) {
+  if (!currentShop) return;
+  const shopId = currentShopHistoryId || currentHistoryId;
+  if (!shopId) return;
+  try {
+    const r = await fetch(`/api/shop/${shopId}/regenerate-staff`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_shopkeeper: false, staff_index: staffIndex }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Failed');
+    currentShop.staff[staffIndex] = data.member;
+    await _saveShopStaffChanges(shopId);
+  } catch (e) {
+    alert(`Regenerate failed: ${e.message}`);
+  }
+}
+
+async function addShopStaffUI() {
+  if (!currentShop) return;
+  const shopId = currentShopHistoryId || currentHistoryId;
+  if (!shopId) return;
+  try {
+    const r = await fetch(`/api/shop/${shopId}/regenerate-staff`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_shopkeeper: false, staff_index: null }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Failed');
+    if (!currentShop.staff) currentShop.staff = [];
+    currentShop.staff.push(data.member);
+    await _saveShopStaffChanges(shopId);
+  } catch (e) {
+    alert(`Add staff failed: ${e.message}`);
+  }
+}
+
+async function removeShopStaffUI(staffIndex) {
+  if (!currentShop) return;
+  const shopId = currentShopHistoryId || currentHistoryId;
+  if (!shopId) return;
+  currentShop.staff.splice(staffIndex, 1);
+  await _saveShopStaffChanges(shopId);
+}
+
+async function _saveShopStaffChanges(shopId) {
+  try {
+    const r = await fetch(`/api/history/${shopId}/update`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: { shopkeeper: currentShop.shopkeeper, staff: currentShop.staff || [] } }),
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Save failed'); }
+    // Update in-memory history
+    const entry = historyEntries.find(e => e.id === shopId);
+    if (entry) {
+      entry.shop = { ...entry.shop, shopkeeper: currentShop.shopkeeper, staff: currentShop.staff || [] };
+    }
+    // Re-render
+    const linkedNpcs = entry?.linked_npcs || [];
+    const isSynced = currentShopSynced;
+    if (document.getElementById('shopSheet') && !document.getElementById('shopSheet').classList.contains('hidden')) {
+      renderShopSheet(currentShop, isSynced, linkedNpcs);
+    } else {
+      const historySheet = document.getElementById('historySheet');
+      if (historySheet) {
+        historySheet.innerHTML = '';
+        _renderShopContent(currentShop, historySheet, isSynced, linkedNpcs);
+      }
+    }
+  } catch (e) {
+    alert(`Save failed: ${e.message}`);
+  }
 }
 
 // -----------------------------------------------------------------------
@@ -2107,6 +2384,8 @@ let _modalGeneratedItem = null;
 let _modalGeneratedItemHistoryId = null;
 let _modalGeneratedChar = null;
 let _modalGeneratedCharHistoryId = null;
+let _modalFactionContext = null;
+let _modalShopContext = null;
 
 function openGenModal(mode, data) {
   _modalMode = mode;
@@ -2114,6 +2393,7 @@ function openGenModal(mode, data) {
   _modalGeneratedChar = null;
   _modalGeneratedItemHistoryId = null;
   _modalGeneratedCharHistoryId = null;
+  // _modalFactionContext and _modalShopContext are set BEFORE calling openGenModal; don't clear them here
 
   document.getElementById('genModalResult').classList.add('hidden');
   document.getElementById('genModalResult').innerHTML = '';
@@ -2145,6 +2425,8 @@ function openGenModal(mode, data) {
 
 function closeGenModal() {
   document.getElementById('genModal').classList.add('hidden');
+  _modalFactionContext = null;
+  _modalShopContext = null;
 }
 
 async function runModalGeneration() {
@@ -2205,7 +2487,7 @@ async function runModalGeneration() {
         alignment: document.getElementById('genModalNpcAlignment').value,
         appearance: '',
         background_detail: 'short',
-        additional_notes: '',
+        additional_notes: _modalFactionContext?.additionalNotes || _modalShopContext?.additionalNotes || '',
         generic_npc: document.getElementById('genModalNpcGeneric').checked,
       };
 
@@ -2260,7 +2542,74 @@ async function saveModalResult() {
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Save failed');
-      resultEl.textContent = `✓ Saved to Docmost`;
+
+      // If opened from a faction member, link the NPC back to the faction
+      if (_modalFactionContext && data.docmost_url) {
+        try {
+          await fetch(`/api/faction/${_modalFactionContext.factionHistoryId}/link-npc`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              member_name: _modalFactionContext.memberName,
+              member_role: _modalFactionContext.memberRole,
+              npc_name: _modalGeneratedChar.name,
+              npc_docmost_url: data.docmost_url,
+              npc_history_id: _modalGeneratedCharHistoryId,
+            }),
+          });
+          // Update in-memory faction history entry linked_npcs
+          const fEntry = historyEntries.find(e => e.id === _modalFactionContext.factionHistoryId);
+          if (fEntry) {
+            if (!fEntry.linked_npcs) fEntry.linked_npcs = [];
+            fEntry.linked_npcs = fEntry.linked_npcs.filter(n => n.member_name !== _modalFactionContext.memberName);
+            fEntry.linked_npcs.push({
+              member_name: _modalFactionContext.memberName,
+              member_role: _modalFactionContext.memberRole,
+              npc_name: _modalGeneratedChar.name,
+              npc_docmost_url: data.docmost_url,
+              npc_history_id: _modalGeneratedCharHistoryId,
+            });
+          }
+          resultEl.textContent = `✓ Saved & linked to faction`;
+        } catch {
+          resultEl.textContent = `✓ Saved (faction link failed — retry from faction sheet)`;
+        }
+        _modalFactionContext = null;
+      } else if (_modalShopContext && data.docmost_url) {
+        // If opened from a shop member, link the NPC back to the shop
+        try {
+          await fetch(`/api/shop/${_modalShopContext.shopHistoryId}/link-npc`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              member_name: _modalShopContext.memberName,
+              member_role: _modalShopContext.memberRole,
+              npc_name: _modalGeneratedChar.name,
+              npc_docmost_url: data.docmost_url,
+              npc_history_id: _modalGeneratedCharHistoryId,
+              is_shopkeeper: _modalShopContext.isShopkeeper,
+            }),
+          });
+          // Update in-memory shop history entry linked_npcs
+          const sEntry = historyEntries.find(e => e.id === _modalShopContext.shopHistoryId);
+          if (sEntry) {
+            if (!sEntry.linked_npcs) sEntry.linked_npcs = [];
+            sEntry.linked_npcs = sEntry.linked_npcs.filter(n => n.member_name !== _modalShopContext.memberName);
+            sEntry.linked_npcs.push({
+              member_name: _modalShopContext.memberName,
+              member_role: _modalShopContext.memberRole,
+              npc_name: _modalGeneratedChar.name,
+              npc_docmost_url: data.docmost_url,
+              npc_history_id: _modalGeneratedCharHistoryId,
+              is_shopkeeper: _modalShopContext.isShopkeeper,
+            });
+          }
+          resultEl.textContent = `✓ Saved & linked to shop`;
+        } catch {
+          resultEl.textContent = `✓ Saved (shop link failed — retry from shop sheet)`;
+        }
+        _modalShopContext = null;
+      } else {
+        resultEl.textContent = `✓ Saved to Docmost`;
+      }
       resultEl.className = 'text-xs text-green-400';
     }
   } catch (e) {
@@ -2271,6 +2620,480 @@ async function saveModalResult() {
     spinner.classList.add('hidden');
     btnText.textContent = 'Save to Docmost';
   }
+}
+
+// -----------------------------------------------------------------------
+// Faction Generator
+// -----------------------------------------------------------------------
+
+async function generateFaction() {
+  setBusy('generateFactionBtn', 'generateFactionSpinner', 'generateFactionBtnText', true, 'Generating…');
+  document.getElementById('factionSheet').classList.add('hidden');
+  document.getElementById('factionPlaceholder').classList.remove('hidden');
+  document.getElementById('factionTokenUsage').classList.add('hidden');
+  document.getElementById('factionSaveSection').classList.add('hidden');
+
+  try {
+    const body = {
+      concept:          document.getElementById('factionConcept').value.trim(),
+      faction_type:     document.getElementById('factionType').value,
+      size:             document.getElementById('factionSize').value,
+      alignment:        document.getElementById('factionAlignment').value,
+      wealth:           document.getElementById('factionWealth').value,
+      reputation:       document.getElementById('factionReputation').value,
+      region:           document.getElementById('factionRegion').value.trim(),
+      additional_notes: document.getElementById('factionNotes').value.trim(),
+    };
+
+    const r = await fetch('/api/generate-faction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || 'Generation failed');
+    }
+
+    const data = await r.json();
+    currentFaction = data.faction;
+    currentFactionHistoryId = data.history_id ?? null;
+
+    document.getElementById('factionPlaceholder').classList.add('hidden');
+    document.getElementById('factionSheet').classList.remove('hidden');
+    renderFactionSheet(currentFaction, document.getElementById('factionSheet'));
+    document.getElementById('factionSaveSection').classList.remove('hidden');
+    _showTokenUsage(data.usage, 'factionTokenUsage');
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+  } finally {
+    setBusy('generateFactionBtn', 'generateFactionSpinner', 'generateFactionBtnText', false, 'Generate Faction');
+  }
+}
+
+async function saveFaction() {
+  if (!currentFaction) return;
+  setBusy('saveFactionBtn', 'saveFactionSpinner', 'saveFactionBtnText', true, 'Saving…');
+  const resultEl = document.getElementById('saveFactionResult');
+  resultEl.classList.add('hidden');
+
+  try {
+    const r = await fetch('/api/save-faction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ faction: currentFaction, history_id: currentFactionHistoryId }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Save failed');
+
+    const entry = historyEntries.find(e => e.id === currentFactionHistoryId);
+    if (entry) {
+      entry.docmost_page_id = data.page_id;
+      entry.docmost_url = data.docmost_url;
+    }
+    currentFactionSynced = true;
+    currentFactionDocmostUrl = data.docmost_url || null;
+    // Re-render to show Generate NPC buttons now that faction is synced
+    renderFactionSheet(currentFaction, document.getElementById('factionSheet'), true, []);
+
+    resultEl.textContent = `✓ Saved to Factions / ${currentFaction.faction_type}`;
+    resultEl.className = 'text-xs text-center py-1 text-green-400';
+    resultEl.classList.remove('hidden');
+  } catch (e) {
+    resultEl.textContent = `✗ ${e.message}`;
+    resultEl.className = 'text-xs text-center py-1 text-red-400';
+    resultEl.classList.remove('hidden');
+  } finally {
+    setBusy('saveFactionBtn', 'saveFactionSpinner', 'saveFactionBtnText', false, 'Save to Docmost');
+  }
+}
+
+function renderFactionSheet(faction, container, isSynced = false, linkedNpcs = []) {
+  container.innerHTML = '';
+
+  const ALIGNMENT_COLOR = {
+    'Lawful Good': '#4a9eff', 'Neutral Good': '#4a7c59', 'Chaotic Good': '#8fbc8f',
+    'Lawful Neutral': '#7a8fa6', 'True Neutral': '#8a7560', 'Chaotic Neutral': '#e07b39',
+    'Lawful Evil': '#a335ee', 'Neutral Evil': '#8b1a1a', 'Chaotic Evil': '#cc2222',
+  };
+  const alignColor = ALIGNMENT_COLOR[faction.alignment] || '#8a7560';
+
+  // Header
+  const header = el('div', 'panel space-y-2');
+  header.innerHTML = `
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-bold text-parchment">${_escHtml(faction.name)}</h2>
+        <div class="flex flex-wrap gap-2 mt-1.5 text-xs">
+          <span class="source-tag">${_escHtml(faction.faction_type)}</span>
+          <span class="source-tag">${_escHtml(faction.size)}</span>
+          <span class="source-tag" style="color:${alignColor};border-color:${alignColor}">${_escHtml(faction.alignment)}</span>
+          <span class="source-tag text-gold">${_escHtml(faction.wealth)}</span>
+        </div>
+      </div>
+    </div>
+    <p class="text-sm text-gray-400 italic">"${_escHtml(faction.motto)}"</p>
+    <p class="text-xs text-gray-500">${_escHtml(faction.public_reputation)}</p>
+  `;
+  container.appendChild(header);
+
+  // Overview + Leadership side by side
+  const row1 = el('div', 'grid grid-cols-1 lg:grid-cols-2 gap-4');
+
+  const overviewPanel = el('div', 'panel space-y-2');
+  overviewPanel.innerHTML = `<div class="section-header"><i class="fa-solid fa-scroll mr-1"></i>Overview</div>
+    <div class="text-sm text-gray-300 leading-relaxed">${_escHtml(faction.overview).replace(/\n\n/g,'</p><p class="mt-2">').replace(/^/,'<p>').replace(/$/,'</p>')}</div>`;
+  row1.appendChild(overviewPanel);
+
+  const leaderPanel = el('div', 'panel space-y-3');
+  leaderPanel.innerHTML = `<div class="section-header"><i class="fa-solid fa-crown mr-1"></i>Leadership</div>`;
+
+  // Leader card
+  const leaderCard = el('div', 'panel bg-[#1a1209] space-y-2');
+  const leaderLinkedNpc = linkedNpcs.find(n => n.member_name === faction.leader.name);
+  leaderCard.innerHTML = `
+    <div class="flex items-start justify-between gap-2">
+      <div>
+        <div class="flex items-baseline gap-2">
+          <span class="font-bold text-parchment">${_escHtml(faction.leader.name)}</span>
+          <span class="text-xs text-gold">${_escHtml(faction.leader.title)}</span>
+        </div>
+        <div class="text-xs text-gray-500">${_escHtml(faction.leader.race)}</div>
+        <div class="text-sm text-gray-300 mt-0.5">${_escHtml(faction.leader.description)}</div>
+        ${leaderLinkedNpc ? `<a href="${_escAttr(leaderLinkedNpc.npc_docmost_url)}" target="_blank" rel="noopener" class="text-xs text-green-400 hover:underline mt-1 inline-block"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>View in Docmost</a>` : ''}
+      </div>
+      <div class="flex flex-col gap-1 flex-shrink-0">
+        ${isSynced && !leaderLinkedNpc ? `<button onclick="openFactionMemberModal(${_escAttr(JSON.stringify(faction.leader.name))},${_escAttr(JSON.stringify(faction.leader.title))},${_escAttr(JSON.stringify(faction.leader.race))},true)" class="btn-secondary text-xs py-1 px-2 whitespace-nowrap"><i class="fa-solid fa-user-plus mr-1"></i>Generate NPC</button>` : ''}
+        <button onclick="regenerateFactionMemberUI(true, null)" class="btn-secondary text-xs py-1 px-2 whitespace-nowrap"><i class="fa-solid fa-rotate-right mr-1"></i>Regenerate</button>
+      </div>
+    </div>
+  `;
+  leaderPanel.appendChild(leaderCard);
+
+  if (faction.notable_members && faction.notable_members.length) {
+    const membersHeader = el('div', 'text-xs text-gray-500 uppercase font-bold tracking-wide mt-2 mb-1');
+    membersHeader.textContent = 'Notable Members';
+    leaderPanel.appendChild(membersHeader);
+    faction.notable_members.forEach((m, idx) => {
+      const memberLinkedNpc = linkedNpcs.find(n => n.member_name === m.name);
+      const memberRow = el('div', 'panel bg-[#1a1209] space-y-1 mb-2');
+      memberRow.innerHTML = `
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <span class="font-semibold text-parchment text-sm">${_escHtml(m.name)}</span>
+            <span class="text-xs text-gold ml-1">${_escHtml(m.role)}</span>
+            <p class="text-xs text-gray-300 mt-0.5">${_escHtml(m.description)}</p>
+            ${memberLinkedNpc ? `<a href="${_escAttr(memberLinkedNpc.npc_docmost_url)}" target="_blank" rel="noopener" class="text-xs text-green-400 hover:underline mt-1 inline-block"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>View in Docmost</a>` : ''}
+          </div>
+          <div class="flex flex-col gap-1 flex-shrink-0">
+            ${isSynced && !memberLinkedNpc ? `<button onclick="openFactionMemberModal(${_escAttr(JSON.stringify(m.name))},${_escAttr(JSON.stringify(m.role))},'',false)" class="btn-secondary text-xs py-1 px-2 whitespace-nowrap"><i class="fa-solid fa-user-plus mr-1"></i>Generate NPC</button>` : ''}
+            <button onclick="regenerateFactionMemberUI(false, ${idx})" class="btn-secondary text-xs py-1 px-2 whitespace-nowrap"><i class="fa-solid fa-rotate-right mr-1"></i>Regenerate</button>
+            <button onclick="removeFactionMemberUI(${idx})" class="text-xs text-red-500 hover:text-red-300 py-1 px-2 text-right"><i class="fa-solid fa-trash mr-1"></i>Remove</button>
+          </div>
+        </div>
+      `;
+      leaderPanel.appendChild(memberRow);
+    });
+  }
+
+  // Add Member button
+  const addMemberBtn = el('button', 'btn-secondary text-xs py-1.5 px-3 w-full mt-2');
+  addMemberBtn.innerHTML = '<i class="fa-solid fa-plus mr-1"></i>Add Member (Generate via Claude)';
+  addMemberBtn.id = 'addFactionMemberBtn';
+  addMemberBtn.onclick = addFactionMemberUI;
+  leaderPanel.appendChild(addMemberBtn);
+
+  row1.appendChild(leaderPanel);
+  container.appendChild(row1);
+
+  // History
+  const historyPanel = el('div', 'panel space-y-2');
+  historyPanel.innerHTML = `<div class="section-header"><i class="fa-solid fa-book-open mr-1"></i>History</div>
+    <div class="text-sm text-gray-300 leading-relaxed">${_escHtml(faction.history).replace(/\n\n/g,'</p><p class="mt-2">').replace(/^/,'<p>').replace(/$/,'</p>')}</div>`;
+  container.appendChild(historyPanel);
+
+  // Goals + Methods
+  const row2 = el('div', 'grid grid-cols-1 lg:grid-cols-2 gap-4');
+
+  const goalsPanel = el('div', 'panel space-y-2');
+  goalsPanel.innerHTML = `<div class="section-header"><i class="fa-solid fa-bullseye mr-1"></i>Goals</div>`;
+  const goalsList = el('ul', 'space-y-1');
+  for (const g of faction.goals) {
+    const li = el('li', 'text-sm text-gray-300 flex gap-2');
+    li.innerHTML = `<span class="text-gold mt-0.5 flex-shrink-0">›</span><span>${_escHtml(g)}</span>`;
+    goalsList.appendChild(li);
+  }
+  goalsPanel.appendChild(goalsList);
+  row2.appendChild(goalsPanel);
+
+  const methodsPanel = el('div', 'panel space-y-2');
+  methodsPanel.innerHTML = `<div class="section-header"><i class="fa-solid fa-chess mr-1"></i>Methods</div>`;
+  const methodsList = el('ul', 'space-y-1');
+  for (const m of faction.methods) {
+    const li = el('li', 'text-sm text-gray-300 flex gap-2');
+    li.innerHTML = `<span class="text-gold mt-0.5 flex-shrink-0">›</span><span>${_escHtml(m)}</span>`;
+    methodsList.appendChild(li);
+  }
+  methodsPanel.appendChild(methodsList);
+  row2.appendChild(methodsPanel);
+  container.appendChild(row2);
+
+  // Intelligence panel
+  const intel = el('div', 'panel space-y-3');
+  intel.innerHTML = `<div class="section-header"><i class="fa-solid fa-magnifying-glass mr-1"></i>Intelligence</div>`;
+  const intelGrid = el('div', 'grid grid-cols-1 lg:grid-cols-2 gap-3 text-sm');
+  const fields = [
+    ['Headquarters', faction.headquarters],
+    ['Symbols', faction.symbols],
+    faction.allies && faction.allies.length ? ['Allies', faction.allies.join(', ')] : null,
+    faction.enemies && faction.enemies.length ? ['Enemies', faction.enemies.join(', ')] : null,
+  ].filter(Boolean);
+  for (const [label, value] of fields) {
+    const d = el('div');
+    d.innerHTML = `<span class="text-xs text-gray-500 uppercase font-bold">${label}</span><p class="text-gray-300 mt-0.5">${_escHtml(value)}</p>`;
+    intelGrid.appendChild(d);
+  }
+  intel.appendChild(intelGrid);
+  container.appendChild(intel);
+
+  // Secrets (DM only)
+  if (faction.secrets && faction.secrets.length) {
+    const secrets = el('div', 'panel space-y-2 border-amber-900');
+    secrets.style.borderColor = '#92400e';
+    secrets.innerHTML = `<div class="section-header" style="color:#f59e0b;border-color:#92400e"><i class="fa-solid fa-eye-slash mr-1"></i>Secrets — DM Only</div>`;
+    for (const s of faction.secrets) {
+      const item = el('div', 'flex gap-2 text-sm text-amber-200');
+      item.innerHTML = `<i class="fa-solid fa-lock text-amber-500 mt-0.5 flex-shrink-0 text-xs"></i><span>${_escHtml(s)}</span>`;
+      secrets.appendChild(item);
+    }
+    container.appendChild(secrets);
+  }
+
+  // Connected NPCs (only shown if any have been linked)
+  if (linkedNpcs && linkedNpcs.length) {
+    const npcPanel = el('div', 'panel space-y-2');
+    npcPanel.innerHTML = `<div class="section-header"><i class="fa-solid fa-link mr-1"></i>Connected NPCs</div>`;
+    for (const n of linkedNpcs) {
+      const row = el('div', 'flex items-center justify-between text-sm py-1 border-b border-border last:border-0');
+      row.innerHTML = `
+        <div>
+          <span class="font-semibold text-parchment">${_escHtml(n.npc_name)}</span>
+          <span class="text-xs text-gold ml-2">${_escHtml(n.member_role)}</span>
+        </div>
+        <a href="${_escAttr(n.npc_docmost_url)}" target="_blank" rel="noopener" class="text-xs text-green-400 hover:underline flex-shrink-0"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>View in Docmost</a>
+      `;
+      npcPanel.appendChild(row);
+    }
+    container.appendChild(npcPanel);
+  }
+}
+
+// -----------------------------------------------------------------------
+// Faction member actions (Generate NPC, Regenerate, Add, Remove)
+// -----------------------------------------------------------------------
+
+function openFactionMemberModal(memberName, memberRole, memberRace, isLeader) {
+  if (!currentHistoryId && !currentFactionHistoryId) return;
+  const histId = currentHistoryId || currentFactionHistoryId;
+  const faction = currentFaction;
+  if (!faction) return;
+
+  const overviewExcerpt = (faction.overview || '').substring(0, 300);
+  const additionalNotes =
+    `This character is the ${memberRole} of ${faction.name}, a ${faction.size} ${faction.faction_type} (${faction.alignment}). ` +
+    `Faction overview: ${overviewExcerpt}. ` +
+    `Weave their faction membership naturally into the backstory and personality.`;
+
+  _modalFactionContext = {
+    factionHistoryId: histId,
+    memberName,
+    memberRole,
+    isLeader,
+    additionalNotes,
+  };
+
+  openGenModal('npc', {
+    name: memberName,
+    concept: `${memberName}, ${memberRole} of ${faction.name}. ${isLeader ? (faction.leader?.description || '') : ''}`,
+    race: memberRace || '',
+  });
+}
+
+async function regenerateFactionMemberUI(isLeader, memberIndex) {
+  const histId = currentHistoryId || currentFactionHistoryId;
+  if (!histId || !currentFaction) return;
+
+  const btn = isLeader
+    ? document.querySelector('[onclick^="regenerateFactionMemberUI(true"]')
+    : document.querySelectorAll('[onclick^="regenerateFactionMemberUI(false"]')[memberIndex];
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Regenerating…'; }
+
+  try {
+    const r = await fetch(`/api/faction/${histId}/regenerate-member`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_leader: isLeader, member_index: memberIndex }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Failed');
+
+    // Apply the new member to the in-memory faction
+    if (isLeader) {
+      currentFaction = { ...currentFaction, leader: data.member };
+    } else {
+      const members = [...(currentFaction.notable_members || [])];
+      members[memberIndex] = data.member;
+      currentFaction = { ...currentFaction, notable_members: members };
+    }
+
+    // Save to history
+    await _saveFactionMemberChanges();
+  } catch (e) {
+    alert(`Regenerate failed: ${e.message}`);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate-right mr-1"></i>Regenerate'; }
+  }
+}
+
+async function addFactionMemberUI() {
+  const histId = currentHistoryId || currentFactionHistoryId;
+  if (!histId || !currentFaction) return;
+
+  const btn = document.getElementById('addFactionMemberBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Generating…'; }
+
+  try {
+    const r = await fetch(`/api/faction/${histId}/regenerate-member`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_leader: false, member_index: null }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Failed');
+
+    const members = [...(currentFaction.notable_members || []), data.member];
+    currentFaction = { ...currentFaction, notable_members: members };
+    await _saveFactionMemberChanges();
+  } catch (e) {
+    alert(`Add member failed: ${e.message}`);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-plus mr-1"></i>Add Member (Generate via Claude)'; }
+  }
+}
+
+async function removeFactionMemberUI(memberIndex) {
+  if (!currentFaction) return;
+  const members = [...(currentFaction.notable_members || [])];
+  members.splice(memberIndex, 1);
+  currentFaction = { ...currentFaction, notable_members: members };
+  await _saveFactionMemberChanges();
+}
+
+async function _saveFactionMemberChanges() {
+  const histId = currentHistoryId || currentFactionHistoryId;
+  if (!histId) return;
+
+  try {
+    await fetch(`/api/history/${histId}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: { leader: currentFaction.leader, notable_members: currentFaction.notable_members } }),
+    });
+  } catch (e) {
+    console.warn('Could not save faction member changes:', e);
+  }
+
+  // Update in-memory history entry
+  const entry = historyEntries.find(e => e.id === histId);
+  if (entry && entry.faction) {
+    entry.faction.leader = currentFaction.leader;
+    entry.faction.notable_members = currentFaction.notable_members;
+  }
+
+  // Re-render the sheet
+  const container = document.getElementById('historySheet') || document.getElementById('factionSheet');
+  if (container) {
+    const linkedNpcs = entry?.linked_npcs || [];
+    renderFactionSheet(currentFaction, container, currentFactionSynced, linkedNpcs);
+  }
+}
+
+// ---- Faction edit ----
+function _buildFactionEditForm(faction) {
+  const form = el('div', 'space-y-4');
+  const FACTION_TYPES = ['Government','Guild','Rebel Group','Traveling Group','Military Order','Criminal Syndicate','Religious Order','Secret Society','Merchant Company'];
+  const SIZES = ['Tiny','Small','Medium','Large','Massive'];
+  const ALIGNMENTS = ['Lawful Good','Neutral Good','Chaotic Good','Lawful Neutral','True Neutral','Chaotic Neutral','Lawful Evil','Neutral Evil','Chaotic Evil'];
+
+  const basics = el('div', 'panel space-y-3');
+  basics.appendChild(_sectionLabel('Basics'));
+  const r1 = el('div', 'grid grid-cols-3 gap-3');
+  r1.appendChild(_editField('edit_faction_name', 'Name', faction.name));
+  r1.appendChild(_editSelect('edit_faction_type', 'Type', FACTION_TYPES, faction.faction_type));
+  r1.appendChild(_editSelect('edit_faction_size', 'Size', SIZES, faction.size));
+  basics.appendChild(r1);
+  const r2 = el('div', 'grid grid-cols-2 gap-3');
+  r2.appendChild(_editSelect('edit_faction_alignment', 'Alignment', ALIGNMENTS, faction.alignment));
+  r2.appendChild(_editField('edit_faction_motto', 'Motto', faction.motto));
+  basics.appendChild(r2);
+  form.appendChild(basics);
+
+  const desc = el('div', 'panel space-y-3');
+  desc.appendChild(_sectionLabel('Description'));
+  desc.appendChild(_editTextarea('edit_faction_overview', 'Overview', faction.overview, 5));
+  desc.appendChild(_editTextarea('edit_faction_history', 'History', faction.history, 4));
+  desc.appendChild(_editField('edit_faction_hq', 'Headquarters', faction.headquarters));
+  desc.appendChild(_editField('edit_faction_symbols', 'Symbols', faction.symbols));
+  form.appendChild(desc);
+
+  const lists = el('div', 'panel space-y-3');
+  lists.appendChild(_sectionLabel('Goals, Methods & Secrets'));
+  lists.appendChild(_editTextarea('edit_faction_goals', 'Goals (one per line)', (faction.goals || []).join('\n'), 4));
+  lists.appendChild(_editTextarea('edit_faction_methods', 'Methods (one per line)', (faction.methods || []).join('\n'), 4));
+  lists.appendChild(_editTextarea('edit_faction_secrets', 'Secrets — DM Only (one per line)', (faction.secrets || []).join('\n'), 3));
+  lists.appendChild(_editTextarea('edit_faction_allies', 'Allies (one per line)', (faction.allies || []).join('\n'), 2));
+  lists.appendChild(_editTextarea('edit_faction_enemies', 'Enemies (one per line)', (faction.enemies || []).join('\n'), 2));
+  form.appendChild(lists);
+
+  const leader = el('div', 'panel space-y-3');
+  leader.appendChild(_sectionLabel('Leader'));
+  const lr = el('div', 'grid grid-cols-2 gap-3');
+  lr.appendChild(_editField('edit_leader_name', 'Name', faction.leader.name));
+  lr.appendChild(_editField('edit_leader_title', 'Title', faction.leader.title));
+  leader.appendChild(lr);
+  const lr2 = el('div', 'grid grid-cols-2 gap-3');
+  lr2.appendChild(_editField('edit_leader_race', 'Race', faction.leader.race));
+  leader.appendChild(lr2);
+  leader.appendChild(_editTextarea('edit_leader_description', 'Description', faction.leader.description, 2));
+  form.appendChild(leader);
+
+  return form;
+}
+
+function _collectFactionEdits() {
+  const splitLines = id => document.getElementById(id).value.split('\n').map(s => s.trim()).filter(Boolean);
+  return {
+    name:             document.getElementById('edit_faction_name').value.trim(),
+    faction_type:     document.getElementById('edit_faction_type').value,
+    size:             document.getElementById('edit_faction_size').value,
+    alignment:        document.getElementById('edit_faction_alignment').value,
+    motto:            document.getElementById('edit_faction_motto').value.trim(),
+    overview:         document.getElementById('edit_faction_overview').value.trim(),
+    history:          document.getElementById('edit_faction_history').value.trim(),
+    headquarters:     document.getElementById('edit_faction_hq').value.trim(),
+    symbols:          document.getElementById('edit_faction_symbols').value.trim(),
+    goals:            splitLines('edit_faction_goals'),
+    methods:          splitLines('edit_faction_methods'),
+    secrets:          splitLines('edit_faction_secrets'),
+    allies:           splitLines('edit_faction_allies'),
+    enemies:          splitLines('edit_faction_enemies'),
+    leader: {
+      name:        document.getElementById('edit_leader_name').value.trim(),
+      title:       document.getElementById('edit_leader_title').value.trim(),
+      race:        document.getElementById('edit_leader_race').value.trim(),
+      description: document.getElementById('edit_leader_description').value.trim(),
+    },
+    notable_members: currentFaction?.notable_members || [],
+  };
 }
 
 // Init
