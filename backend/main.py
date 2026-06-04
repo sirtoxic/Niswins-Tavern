@@ -29,6 +29,8 @@
 #   GET  /api/history/{id}                   — fetch a single history entry with full data
 #   POST /api/history/{id}/update            — patch fields on a history entry (used for in-place edits)
 #
+#   GET  /api/players                        — list history entries of type "Player Character"
+#
 # Static files: the /frontend directory is served at / with index.html as the fallback.
 
 import os
@@ -104,7 +106,7 @@ async def serve_index():
 async def get_config():
     cfg = _load_config()
     return {
-        "folders": {"npcs": "NPCs", "bestiary": "Bestiary", "locations": "Locations", "encounters": "Encounters"},
+        "folders": {"npcs": "NPCs", "bestiary": "Bestiary", "locations": "Locations", "encounters": "Encounters", "players": "Players"},
         "docmost_url": cfg["docmost"]["url"],
     }
 
@@ -119,6 +121,7 @@ async def get_settings():
     folder_urls = dcfg.get("folder_urls", {})
 
     return {
+        "campaign_name": cfg.get("campaign_name", ""),
         "anthropic_api_key": api_key,
         "claude_model": cfg.get("claude", {}).get("model", "claude-sonnet-4-6"),
         "docmost_url": dcfg.get("url", ""),
@@ -130,6 +133,7 @@ async def get_settings():
         "folder_url_encounters": folder_urls.get("encounters", ""),
         "folder_url_items": folder_urls.get("items", ""),
         "folder_url_factions": folder_urls.get("factions", ""),
+        "folder_url_players": folder_urls.get("players", ""),
     }
 
 
@@ -158,9 +162,11 @@ async def update_settings(req: SettingsUpdate):
                 "encounters": req.folder_url_encounters,
                 "items": req.folder_url_items,
                 "factions": req.folder_url_factions,
+                "players": req.folder_url_players,
             },
         }
         cfg["claude"] = {"model": req.claude_model}
+        cfg["campaign_name"] = req.campaign_name
 
         with open(CONFIG_PATH, "w") as f:
             yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
@@ -195,15 +201,17 @@ async def api_generate(req: GenerateRequest):
         entry = {
             "id": entry_id,
             "timestamp": ts.isoformat(),
-            "type": "Generic NPC" if req.generic_npc else "Character",
+            "type": "Player Character" if (req.is_player_character or req.player_name) else ("Generic NPC" if req.generic_npc else "Character"),
             "name": character.name,
             "race": character.race,
             "character_class": character.character_class,
             "level": character.level,
             "alignment": character.alignment,
             "generic_npc": req.generic_npc,
+            "player_name": req.player_name or "",
             "docmost_page_id": None,
             "docmost_url": None,
+            "generation_params": req.model_dump(),
             "character": character.model_dump(),
         }
         history_store.save_entry(entry)
@@ -266,6 +274,7 @@ async def api_generate_item(req: GenerateItemRequest):
             "target_level_max": item.target_level_max,
             "docmost_page_id": None,
             "docmost_url": None,
+            "generation_params": req.model_dump(),
             "item": item.model_dump(),
         }
         history_store.save_entry(entry)
@@ -317,6 +326,7 @@ async def api_generate_shop(req: GenerateShopRequest):
             "item_count": len(shop.items),
             "docmost_page_id": None,
             "docmost_url": None,
+            "generation_params": req.model_dump(),
             "shop": shop.model_dump(),
         }
         history_store.save_entry(entry)
@@ -456,6 +466,7 @@ async def api_generate_faction(req: GenerateFactionRequest):
             "alignment": faction.alignment,
             "docmost_page_id": None,
             "docmost_url": None,
+            "generation_params": req.model_dump(),
             "faction": faction.model_dump(),
         }
         history_store.save_entry(entry)
@@ -583,7 +594,7 @@ async def regenerate_faction_member_endpoint(faction_id: str, req: RegenerateMem
 async def update_history_entry(entry_id: str, req: UpdateEntryRequest):
     try:
         entry = history_store.get_entry(entry_id)
-        obj_key = {"Character": "character", "Generic NPC": "character", "Item": "item", "Shop": "shop", "Faction": "faction"}.get(entry.get("type", ""))
+        obj_key = {"Character": "character", "Generic NPC": "character", "Player Character": "character", "Item": "item", "Shop": "shop", "Faction": "faction"}.get(entry.get("type", ""))
         if obj_key and obj_key in entry:
             entry[obj_key].update(req.updates)
         # Keep top-level metadata in sync with edited fields
@@ -627,6 +638,12 @@ async def api_history_entry(entry_id: str):
         return history_store.get_entry(entry_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="History entry not found")
+
+
+@app.get("/api/players")
+async def api_players_list():
+    entries = history_store.list_entries()
+    return [e for e in entries if e.get("type") == "Player Character"]
 
 
 app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")

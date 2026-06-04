@@ -50,6 +50,11 @@ let selectedHistoryEntryType = null;  // 'Character', 'Generic NPC', 'Item', 'Sh
 
 let historyActiveTag = null;
 
+let currentPlayerCharacter = null;
+let currentPlayerCharacterId = null;
+let partyEntries = [];
+let selectedPcMode = 'generate';
+
 const RARITY_COLORS = {
   Common:    '#9d9d9d',
   Uncommon:  '#1eff00',
@@ -66,7 +71,7 @@ async function loadConfig() {
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
-    for (const selId of ['saveFolder', 'historySaveFolder']) {
+    for (const selId of ['saveFolder', 'historySaveFolder', 'pcSaveFolder']) {
       const sel = document.getElementById(selId);
       if (!sel) continue;
       sel.innerHTML = '';
@@ -95,25 +100,28 @@ function setDetail(level) {
 // View switching
 // -----------------------------------------------------------------------
 
-const VIEW_HASHES = { forge: '#npcs', items: '#items', shops: '#shops', factions: '#factions', history: '#history', settings: '#settings' };
-const HASH_VIEWS = { '#npcs': 'forge', '#items': 'items', '#shops': 'shops', '#factions': 'factions', '#history': 'history', '#settings': 'settings' };
+const VIEW_HASHES = { forge: '#npcs', items: '#items', shops: '#shops', factions: '#factions', players: '#players', history: '#history', settings: '#settings' };
+const HASH_VIEWS = { '#npcs': 'forge', '#items': 'items', '#shops': 'shops', '#factions': 'factions', '#players': 'players', '#history': 'history', '#settings': 'settings' };
 
 function switchView(view, updateHash = true) {
   document.getElementById('viewForge').classList.toggle('hidden', view !== 'forge');
   document.getElementById('viewItems').classList.toggle('hidden', view !== 'items');
   document.getElementById('viewShops').classList.toggle('hidden', view !== 'shops');
   document.getElementById('viewFactions').classList.toggle('hidden', view !== 'factions');
+  document.getElementById('viewPlayers').classList.toggle('hidden', view !== 'players');
   document.getElementById('viewHistory').classList.toggle('hidden', view !== 'history');
   document.getElementById('viewSettings').classList.toggle('hidden', view !== 'settings');
   document.getElementById('navForge').classList.toggle('nav-active', view === 'forge');
   document.getElementById('navItems').classList.toggle('nav-active', view === 'items');
   document.getElementById('navShops').classList.toggle('nav-active', view === 'shops');
   document.getElementById('navFactions').classList.toggle('nav-active', view === 'factions');
+  document.getElementById('navPlayers').classList.toggle('nav-active', view === 'players');
   document.getElementById('navHistory').classList.toggle('nav-active', view === 'history');
   document.getElementById('navSettings').classList.toggle('nav-active', view === 'settings');
   if (updateHash && location.hash !== (VIEW_HASHES[view] || '')) {
     history.pushState(null, '', VIEW_HASHES[view] || '#npcs');
   }
+  if (view === 'players') loadPartyRoster();
   if (view === 'history') {
     if (historyEntries.length === 0) loadHistoryList();
     else renderHistoryList();
@@ -368,14 +376,15 @@ async function openHistoryEntry(entryId) {
 
 function _typeColor(type) {
   const map = {
-    'Character':   '#c9a227',
-    'Generic NPC': '#8a7560',
-    'Beast':       '#4a7c59',
-    'Location':    '#4a6e9e',
-    'Encounter':   '#8b1a1a',
-    'Item':        '#a335ee',
-    'Shop':        '#2e86ab',
-    'Faction':     '#e07b39',
+    'Character':        '#c9a227',
+    'Generic NPC':      '#8a7560',
+    'Player Character': '#3b9e8e',
+    'Beast':            '#4a7c59',
+    'Location':         '#4a6e9e',
+    'Encounter':        '#8b1a1a',
+    'Item':             '#a335ee',
+    'Shop':             '#2e86ab',
+    'Faction':          '#e07b39',
   };
   return map[type] || '#8a7560';
 }
@@ -403,6 +412,308 @@ function _formatTimestamp(ts) {
 }
 
 // -----------------------------------------------------------------------
+// Players
+// -----------------------------------------------------------------------
+
+async function loadPartyRoster() {
+  try {
+    const r = await fetch('/api/players');
+    partyEntries = await r.json();
+    renderPartyRoster();
+  } catch {}
+}
+
+function renderPartyRoster() {
+  const container = document.getElementById('partyRoster');
+  if (!container) return;
+  if (partyEntries.length === 0) {
+    container.innerHTML = '<p class="text-xs text-gray-600 text-center py-3">No characters yet.</p>';
+    return;
+  }
+  container.innerHTML = '';
+  for (const entry of partyEntries) {
+    const card = document.createElement('div');
+    card.className = 'history-card' + (entry.id === currentPlayerCharacterId ? ' selected' : '');
+    card.onclick = () => openPartyEntry(entry.id);
+    const playerLine = entry.player_name
+      ? `<div class="text-xs text-gray-500">${_escHtml(entry.player_name)}'s character</div>` : '';
+    const syncBadge = entry.docmost_page_id ? '<span class="text-xs text-green-600 ml-1">✓</span>' : '';
+    card.innerHTML = `
+      <div class="flex items-center gap-1 mb-0.5">
+        <span class="text-sm font-bold text-parchment leading-tight">${_escHtml(entry.name)}</span>${syncBadge}
+      </div>
+      ${playerLine}
+      <div class="text-xs text-gray-500">${_escHtml(entry.character_class)} · ${_escHtml(entry.race)} · Lvl ${entry.level}</div>
+    `;
+    container.appendChild(card);
+  }
+}
+
+async function openPartyEntry(entryId) {
+  currentPlayerCharacterId = entryId;
+  renderPartyRoster();
+  try {
+    const r = await fetch(`/api/history/${entryId}`);
+    if (!r.ok) throw new Error('Entry not found');
+    const entry = await r.json();
+    currentPlayerCharacter = entry.character;
+
+    document.getElementById('pcPlaceholder').classList.add('hidden');
+    document.getElementById('pcSheet').classList.remove('hidden');
+    document.getElementById('pcSheet').innerHTML = '';
+    renderSheet(currentPlayerCharacter, document.getElementById('pcSheet'));
+    document.getElementById('pcSaveSection').classList.remove('hidden');
+    document.getElementById('addToPartyBtn').classList.add('hidden');
+    document.getElementById('addToPartyResult').classList.add('hidden');
+    _populatePcStatInputs(currentPlayerCharacter);
+  } catch (e) {
+    alert(`Error loading character: ${e.message}`);
+  }
+}
+
+function setPcMode(mode) {
+  selectedPcMode = mode;
+  document.getElementById('pcGenerateForm').classList.toggle('hidden', mode !== 'generate');
+  document.getElementById('pcManualForm').classList.toggle('hidden', mode !== 'manual');
+  document.getElementById('pcModeGenerateBtn').className =
+    mode === 'generate' ? 'flex-1 btn-primary text-xs py-1.5' : 'flex-1 btn-secondary text-xs py-1.5';
+  document.getElementById('pcModeManualBtn').className =
+    mode === 'manual' ? 'flex-1 btn-primary text-xs py-1.5' : 'flex-1 btn-secondary text-xs py-1.5';
+}
+
+async function _submitPcGeneration(body, btnId, spinnerId, textId, defaultLabel, tokenUsageId) {
+  body.is_player_character = true;
+  setBusy(btnId, spinnerId, textId, true, 'Generating…');
+  document.getElementById('pcSheet').classList.add('hidden');
+  document.getElementById('pcPlaceholder').classList.remove('hidden');
+  document.getElementById('pcSaveSection').classList.add('hidden');
+  document.getElementById(tokenUsageId).classList.add('hidden');
+
+  try {
+    const r = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || 'Generation failed');
+    }
+    const data = await r.json();
+    currentPlayerCharacter = data.character;
+    currentPlayerCharacterId = data.history_id ?? null;
+
+    document.getElementById('pcPlaceholder').classList.add('hidden');
+    document.getElementById('pcSheet').classList.remove('hidden');
+    document.getElementById('pcSheet').innerHTML = '';
+    renderSheet(currentPlayerCharacter, document.getElementById('pcSheet'));
+    document.getElementById('pcSaveSection').classList.remove('hidden');
+    document.getElementById('addToPartyBtn').classList.add('hidden');
+    document.getElementById('addToPartyResult').classList.add('hidden');
+    _populatePcStatInputs(currentPlayerCharacter);
+    _showTokenUsage(data.usage, tokenUsageId);
+
+    await loadPartyRoster();
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+    document.getElementById('pcPlaceholder').classList.remove('hidden');
+    document.getElementById('pcSheet').classList.add('hidden');
+  } finally {
+    setBusy(btnId, spinnerId, textId, false, defaultLabel);
+  }
+}
+
+async function generatePlayerCharacter() {
+  const concept = document.getElementById('pcConcept').value.trim();
+  const race = document.getElementById('pcRace').value.trim();
+  if (!concept || !race) {
+    alert('Please fill in Concept and Race before generating.');
+    return;
+  }
+  await _submitPcGeneration({
+    concept,
+    race,
+    character_class: document.getElementById('pcClass').value,
+    level: parseInt(document.getElementById('pcLevel').value),
+    alignment: document.getElementById('pcAlignment').value,
+    appearance: document.getElementById('pcAppearance').value.trim(),
+    background_detail: 'medium',
+    additional_notes: document.getElementById('pcNotes').value.trim(),
+    generic_npc: false,
+    player_name: document.getElementById('pcPlayerName').value.trim() || null,
+  }, 'generatePcBtn', 'generatePcSpinner', 'generatePcBtnText', 'Generate Character', 'pcGenTokenUsage');
+}
+
+async function createManualCharacter() {
+  const charName = document.getElementById('pcManualCharName').value.trim();
+  const race = document.getElementById('pcManualRace').value.trim();
+  if (!charName || !race) {
+    alert('Please fill in Character Name and Race.');
+    return;
+  }
+  const background = document.getElementById('pcManualBackground').value.trim();
+  const notes = document.getElementById('pcManualNotes').value.trim();
+  const concept = [charName, background ? `Background: ${background}` : '', notes].filter(Boolean).join('. ');
+
+  await _submitPcGeneration({
+    concept,
+    race,
+    character_class: document.getElementById('pcManualClass').value,
+    level: parseInt(document.getElementById('pcManualLevel').value),
+    alignment: document.getElementById('pcManualAlignment').value,
+    appearance: document.getElementById('pcManualAppearance').value.trim(),
+    background_detail: 'medium',
+    additional_notes: '',
+    generic_npc: false,
+    player_name: document.getElementById('pcManualPlayerName').value.trim() || null,
+    manual_ability_scores: {
+      str: parseInt(document.getElementById('pcManualStr').value) || 10,
+      dex: parseInt(document.getElementById('pcManualDex').value) || 10,
+      con: parseInt(document.getElementById('pcManualCon').value) || 10,
+      int: parseInt(document.getElementById('pcManualInt').value) || 10,
+      wis: parseInt(document.getElementById('pcManualWis').value) || 10,
+      cha: parseInt(document.getElementById('pcManualCha').value) || 10,
+    },
+  }, 'createPcBtn', 'createPcSpinner', 'createPcBtnText', 'Create Character', 'pcManualTokenUsage');
+}
+
+async function addCurrentToParty() {
+  if (!currentPlayerCharacterId) return;
+  const resultEl = document.getElementById('addToPartyResult');
+  const btn = document.getElementById('addToPartyBtn');
+  btn.disabled = true;
+  resultEl.classList.add('hidden');
+
+  try {
+    const r = await fetch(`/api/history/${currentPlayerCharacterId}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: { type: 'Player Character' } }),
+    });
+    if (!r.ok) throw new Error('Update failed');
+
+    resultEl.textContent = '✓ Added to party';
+    resultEl.className = 'text-xs text-center py-1 text-green-400';
+    resultEl.classList.remove('hidden');
+    btn.classList.add('hidden');
+
+    await loadPartyRoster();
+  } catch (e) {
+    resultEl.textContent = `✗ ${e.message}`;
+    resultEl.className = 'text-xs text-center py-1 text-red-400';
+    resultEl.classList.remove('hidden');
+    btn.disabled = false;
+  }
+}
+
+async function savePlayerCharacter() {
+  if (!currentPlayerCharacter) return;
+  const folder = document.getElementById('pcSaveFolder').value;
+  setBusy('savePcBtn', 'savePcSpinner', 'savePcBtnText', true, 'Saving…');
+  const resultEl = document.getElementById('savePcResult');
+  resultEl.classList.add('hidden');
+
+  try {
+    const r = await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ character: currentPlayerCharacter, folder, history_id: currentPlayerCharacterId }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Save failed');
+
+    const entry = partyEntries.find(e => e.id === currentPlayerCharacterId);
+    if (entry) {
+      entry.docmost_page_id = data.page_id;
+      entry.docmost_url = data.docmost_url;
+      renderPartyRoster();
+    }
+
+    resultEl.textContent = `✓ Saved to Docmost (page ${data.page_id})`;
+    resultEl.className = 'text-xs text-center py-1 text-green-400';
+    resultEl.classList.remove('hidden');
+  } catch (e) {
+    resultEl.textContent = `✗ ${e.message}`;
+    resultEl.className = 'text-xs text-center py-1 text-red-400';
+    resultEl.classList.remove('hidden');
+  } finally {
+    setBusy('savePcBtn', 'savePcSpinner', 'savePcBtnText', false, 'Save to Docmost');
+  }
+}
+
+function _populatePcStatInputs(char) {
+  if (!char || !char.ability_scores) return;
+  const as = char.ability_scores;
+  document.getElementById('pcEditStr').value = as.strength.total;
+  document.getElementById('pcEditDex').value = as.dexterity.total;
+  document.getElementById('pcEditCon').value = as.constitution.total;
+  document.getElementById('pcEditInt').value = as.intelligence.total;
+  document.getElementById('pcEditWis').value = as.wisdom.total;
+  document.getElementById('pcEditCha').value = as.charisma.total;
+}
+
+async function applyPcStatEdits() {
+  if (!currentPlayerCharacter) return;
+  const resultEl = document.getElementById('pcStatEditResult');
+  resultEl.classList.add('hidden');
+
+  const newTotals = {
+    strength:     parseInt(document.getElementById('pcEditStr').value) || 10,
+    dexterity:    parseInt(document.getElementById('pcEditDex').value) || 10,
+    constitution: parseInt(document.getElementById('pcEditCon').value) || 10,
+    intelligence: parseInt(document.getElementById('pcEditInt').value) || 10,
+    wisdom:       parseInt(document.getElementById('pcEditWis').value) || 10,
+    charisma:     parseInt(document.getElementById('pcEditCha').value) || 10,
+  };
+
+  const recalc = _recalcAbilityScores(currentPlayerCharacter, newTotals);
+  currentPlayerCharacter = recalc;
+
+  const sheet = document.getElementById('pcSheet');
+  sheet.innerHTML = '';
+  renderSheet(currentPlayerCharacter, sheet);
+
+  if (currentPlayerCharacterId) {
+    try {
+      await fetch(`/api/history/${currentPlayerCharacterId}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates: {
+          ability_scores: recalc.ability_scores,
+          saving_throws: recalc.saving_throws,
+          skills: recalc.skills,
+          initiative: recalc.initiative,
+          initiative_breakdown: recalc.initiative_breakdown,
+          passive_perception: recalc.passive_perception,
+          passive_perception_breakdown: recalc.passive_perception_breakdown,
+          armor_class: recalc.armor_class,
+          ...(recalc.spellcasting ? { spellcasting: recalc.spellcasting } : {}),
+        }}),
+      });
+      resultEl.textContent = '✓ Stats updated';
+      resultEl.className = 'text-xs text-center py-1 text-green-400';
+    } catch {
+      resultEl.textContent = '✓ Stats updated (not persisted)';
+      resultEl.className = 'text-xs text-center py-1 text-amber-400';
+    }
+    resultEl.classList.remove('hidden');
+  }
+}
+
+function exportPcToPDF() {
+  if (!currentPlayerCharacter) return;
+  window.print();
+}
+
+function exportPcToFoundryJSON() {
+  if (!currentPlayerCharacter) return;
+  const prev = currentCharacter;
+  currentCharacter = currentPlayerCharacter;
+  exportToFoundryJSON();
+  currentCharacter = prev;
+}
+
+// -----------------------------------------------------------------------
 // Settings
 // -----------------------------------------------------------------------
 
@@ -411,6 +722,9 @@ async function loadSettings() {
     const r = await fetch('/api/settings');
     if (!r.ok) throw new Error('Failed to load settings');
     const s = await r.json();
+    const campaignName = s.campaign_name || '';
+    document.getElementById('settingCampaignName').value = campaignName;
+    document.getElementById('campaignName').textContent = campaignName;
     document.getElementById('settingApiKey').value = s.anthropic_api_key || '';
     document.getElementById('settingClaudeModel').value = s.claude_model || '';
     document.getElementById('settingDocmostUrl').value = s.docmost_url || '';
@@ -422,8 +736,9 @@ async function loadSettings() {
     document.getElementById('settingFolderUrlEncounters').value = s.folder_url_encounters || '';
     document.getElementById('settingFolderUrlItems').value = s.folder_url_items || '';
     document.getElementById('settingFolderUrlFactions').value = s.folder_url_factions || '';
+    document.getElementById('settingFolderUrlPlayers').value = s.folder_url_players || '';
     // Clear any stale test results
-    for (const key of ['Npcs', 'Bestiary', 'Locations', 'Encounters', 'Items', 'Factions']) {
+    for (const key of ['Npcs', 'Bestiary', 'Locations', 'Encounters', 'Items', 'Factions', 'Players']) {
       document.getElementById(`testResult${key}`).classList.add('hidden');
     }
   } catch (e) {
@@ -437,6 +752,7 @@ async function saveSettings() {
   resultEl.classList.add('hidden');
 
   const body = {
+    campaign_name: document.getElementById('settingCampaignName').value.trim(),
     anthropic_api_key: document.getElementById('settingApiKey').value,
     claude_model: document.getElementById('settingClaudeModel').value.trim(),
     docmost_url: document.getElementById('settingDocmostUrl').value.trim(),
@@ -448,6 +764,7 @@ async function saveSettings() {
     folder_url_encounters: document.getElementById('settingFolderUrlEncounters').value.trim(),
     folder_url_items: document.getElementById('settingFolderUrlItems').value.trim(),
     folder_url_factions: document.getElementById('settingFolderUrlFactions').value.trim(),
+    folder_url_players: document.getElementById('settingFolderUrlPlayers').value.trim(),
   };
 
   try {
@@ -462,6 +779,9 @@ async function saveSettings() {
     resultEl.textContent = '✓ Settings saved';
     resultEl.className = 'text-xs text-green-400';
     resultEl.classList.remove('hidden');
+
+    // Update campaign name in header immediately
+    document.getElementById('campaignName').textContent = body.campaign_name;
 
     // Refresh the folder dropdowns on the Forge and History tabs
     await loadConfig();
@@ -748,6 +1068,106 @@ async function confirmResync() {
 }
 
 // -----------------------------------------------------------------------
+// Ability score recalculation
+// -----------------------------------------------------------------------
+
+const _SKILL_ABILITY_MAP = {
+  acrobatics: 'dexterity', animal_handling: 'wisdom', arcana: 'intelligence',
+  athletics: 'strength', deception: 'charisma', history: 'intelligence',
+  insight: 'wisdom', intimidation: 'charisma', investigation: 'intelligence',
+  medicine: 'wisdom', nature: 'intelligence', perception: 'wisdom',
+  performance: 'charisma', persuasion: 'charisma', religion: 'intelligence',
+  sleight_of_hand: 'dexterity', stealth: 'dexterity', survival: 'wisdom',
+};
+const _ABILITY_KEYS = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'];
+
+function _recalcAbilityScores(char, newTotals) {
+  const c = JSON.parse(JSON.stringify(char));
+  const profBonus = c.proficiency_bonus;
+  const abbr = (a) => a.slice(0, 3).toUpperCase();
+
+  for (const ability of _ABILITY_KEYS) {
+    if (newTotals[ability] == null) continue;
+    const total = newTotals[ability];
+    const mod = Math.floor((total - 10) / 2);
+    const s = c.ability_scores[ability];
+    s.base = total - (s.racial_bonus || 0) - (s.other_bonus || 0);
+    s.total = total;
+    s.modifier = mod;
+  }
+
+  const getMod = (a) => c.ability_scores[a].modifier;
+
+  for (const ability of _ABILITY_KEYS) {
+    const st = c.saving_throws[ability];
+    const m = getMod(ability);
+    const profAdd = st.proficient ? profBonus : 0;
+    st.base_modifier = m;
+    st.proficiency_bonus = profBonus;
+    st.total = m + profAdd;
+    st.breakdown = st.proficient
+      ? `${abbr(ability)} ${sign(m)} + Prof +${profBonus} = ${sign(st.total)}`
+      : `${abbr(ability)} ${sign(m)} = ${sign(st.total)}`;
+  }
+
+  for (const [skillName, ability] of Object.entries(_SKILL_ABILITY_MAP)) {
+    const sk = c.skills[skillName];
+    if (!sk) continue;
+    const m = getMod(ability);
+    const profAdd = sk.expertise ? profBonus * 2 : (sk.proficient ? profBonus : 0);
+    sk.base_modifier = m;
+    sk.proficiency_bonus = profBonus;
+    sk.total = m + profAdd + (sk.other_bonus || 0);
+    let bd = `${abbr(ability)} ${sign(m)}`;
+    if (sk.expertise) bd += ` + Exp +${profBonus * 2}`;
+    else if (sk.proficient) bd += ` + Prof +${profBonus}`;
+    if (sk.other_bonus) bd += ` + ${sign(sk.other_bonus)}`;
+    bd += ` = ${sign(sk.total)}`;
+    sk.breakdown = bd;
+  }
+
+  const dexMod = getMod('dexterity');
+  c.initiative = dexMod;
+  c.initiative_breakdown = `DEX ${sign(dexMod)}`;
+  c.passive_perception = 10 + c.skills.perception.total;
+  c.passive_perception_breakdown = `10 + Perception ${sign(c.skills.perception.total)} = ${c.passive_perception}`;
+
+  if (c.armor_class && c.armor_class.components) {
+    for (const comp of c.armor_class.components) {
+      if (comp.type === 'dex') comp.value = dexMod;
+    }
+    c.armor_class.total = c.armor_class.components.reduce((sum, comp) => sum + comp.value, 0);
+  }
+
+  if (c.spellcasting) {
+    const spellAbilKey = c.spellcasting.ability.toLowerCase();
+    if (c.ability_scores[spellAbilKey]) {
+      const sm = getMod(spellAbilKey);
+      const ab = abbr(c.spellcasting.ability);
+      c.spellcasting.ability_modifier = sm;
+      c.spellcasting.proficiency_bonus = profBonus;
+      c.spellcasting.spell_attack_bonus = profBonus + sm;
+      c.spellcasting.spell_attack_breakdown = `Prof +${profBonus} + ${ab} ${sign(sm)} = ${sign(profBonus + sm)}`;
+      c.spellcasting.spell_save_dc = 8 + profBonus + sm;
+      c.spellcasting.spell_save_breakdown = `8 + Prof +${profBonus} + ${ab} ${sign(sm)} = ${8 + profBonus + sm}`;
+    }
+  }
+
+  return c;
+}
+
+function _collectNewScoreTotals(prefix) {
+  return {
+    strength:     parseInt(document.getElementById(`${prefix}Str`)?.value) || 10,
+    dexterity:    parseInt(document.getElementById(`${prefix}Dex`)?.value) || 10,
+    constitution: parseInt(document.getElementById(`${prefix}Con`)?.value) || 10,
+    intelligence: parseInt(document.getElementById(`${prefix}Int`)?.value) || 10,
+    wisdom:       parseInt(document.getElementById(`${prefix}Wis`)?.value) || 10,
+    charisma:     parseInt(document.getElementById(`${prefix}Cha`)?.value) || 10,
+  };
+}
+
+// -----------------------------------------------------------------------
 // Edit mode
 // -----------------------------------------------------------------------
 
@@ -815,11 +1235,32 @@ function _buildCharacterEditForm(c) {
   eq.appendChild(_editTextarea('edit_equipment', '', (c.equipment || []).join('\n'), 4));
   form.appendChild(eq);
 
+  const scores = el('div', 'panel space-y-3');
+  scores.appendChild(_sectionLabel('Ability Scores'));
+  scores.appendChild(el('div', 'text-xs text-gray-500 -mt-2 mb-2', 'Enter final totals. Saving throws, skills, initiative, and AC recalculate automatically.'));
+  const scoreGrid = el('div', 'grid grid-cols-3 gap-3');
+  const SCORE_DEFS = [
+    ['edit_scoreStr', 'STR', c.ability_scores.strength.total],
+    ['edit_scoreDex', 'DEX', c.ability_scores.dexterity.total],
+    ['edit_scoreCon', 'CON', c.ability_scores.constitution.total],
+    ['edit_scoreInt', 'INT', c.ability_scores.intelligence.total],
+    ['edit_scoreWis', 'WIS', c.ability_scores.wisdom.total],
+    ['edit_scoreCha', 'CHA', c.ability_scores.charisma.total],
+  ];
+  for (const [id, label, value] of SCORE_DEFS) {
+    const w = el('div');
+    w.innerHTML = `<label class="text-xs text-gray-400 block mb-1 text-center">${label}</label>
+      <input id="${id}" type="number" min="1" max="30" value="${_escAttr(value)}" class="input-field text-sm text-center" />`;
+    scoreGrid.appendChild(w);
+  }
+  scores.appendChild(scoreGrid);
+  form.appendChild(scores);
+
   return form;
 }
 
 function _collectCharacterEdits() {
-  return {
+  const base = {
     name: document.getElementById('edit_name').value.trim(),
     background: document.getElementById('edit_background').value.trim(),
     appearance: document.getElementById('edit_appearance').value.trim(),
@@ -830,6 +1271,34 @@ function _collectCharacterEdits() {
     backstory: document.getElementById('edit_backstory').value.trim(),
     equipment: document.getElementById('edit_equipment').value.split('\n').map(s => s.trim()).filter(Boolean),
   };
+
+  const newTotals = {
+    strength:     parseInt(document.getElementById('edit_scoreStr')?.value) || 10,
+    dexterity:    parseInt(document.getElementById('edit_scoreDex')?.value) || 10,
+    constitution: parseInt(document.getElementById('edit_scoreCon')?.value) || 10,
+    intelligence: parseInt(document.getElementById('edit_scoreInt')?.value) || 10,
+    wisdom:       parseInt(document.getElementById('edit_scoreWis')?.value) || 10,
+    charisma:     parseInt(document.getElementById('edit_scoreCha')?.value) || 10,
+  };
+
+  const scoresChanged = _ABILITY_KEYS.some(a => newTotals[a] !== currentCharacter.ability_scores[a].total);
+  if (scoresChanged) {
+    const c = _recalcAbilityScores(currentCharacter, newTotals);
+    return {
+      ...base,
+      ability_scores: c.ability_scores,
+      saving_throws: c.saving_throws,
+      skills: c.skills,
+      initiative: c.initiative,
+      initiative_breakdown: c.initiative_breakdown,
+      passive_perception: c.passive_perception,
+      passive_perception_breakdown: c.passive_perception_breakdown,
+      armor_class: c.armor_class,
+      ...(c.spellcasting ? { spellcasting: c.spellcasting } : {}),
+    };
+  }
+
+  return base;
 }
 
 // ---- Item edit ----

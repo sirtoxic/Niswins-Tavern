@@ -103,6 +103,17 @@ def build_user_prompt(req: GenerateRequest) -> str:
     notes_section = f"\nAdditional notes: {req.additional_notes}" if req.additional_notes.strip() else ""
     generic_note = "\n\nNOTE: GENERIC NPC MODE is active — follow the simplified output rules from the system prompt." if req.generic_npc else ""
 
+    manual_scores_section = ""
+    if req.manual_ability_scores:
+        s = req.manual_ability_scores
+        manual_scores_section = (
+            f"\n\nFIXED ABILITY SCORES — the player has provided these totals (racial bonuses already included):\n"
+            f"STR: {s.get('str', 10)}, DEX: {s.get('dex', 10)}, CON: {s.get('con', 10)}, "
+            f"INT: {s.get('int', 10)}, WIS: {s.get('wis', 10)}, CHA: {s.get('cha', 10)}\n"
+            f"Set total to these values exactly. Set base + racial_bonus = total (split sensibly for the race, "
+            f"but the total MUST equal the provided values). Do not invent different scores."
+        )
+
     return f"""Generate a complete D&D 5e character sheet for:
 - Concept: {req.concept}
 - Race: {req.race}
@@ -110,7 +121,7 @@ def build_user_prompt(req: GenerateRequest) -> str:
 - Level: {req.level}
 - Alignment: {req.alignment}
 - Appearance: {appearance_instruction}
-- Backstory detail: {backstory_instruction}{notes_section}{generic_note}
+- Backstory detail: {backstory_instruction}{notes_section}{generic_note}{manual_scores_section}
 
 Return a JSON object matching this exact schema. Every field is required unless marked optional.
 

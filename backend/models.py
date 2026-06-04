@@ -221,6 +221,9 @@ class GenerateRequest(BaseModel):
     background_detail: str  # "short", "medium", "long"
     additional_notes: str = ""
     generic_npc: bool = False
+    player_name: Optional[str] = None
+    is_player_character: bool = False
+    manual_ability_scores: Optional[dict] = None  # {str, dex, con, int, wis, cha: int}
 
 
 class SaveRequest(BaseModel):
@@ -419,6 +422,7 @@ class RegenerateMemberRequest(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
+    campaign_name: str = ""
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-6"
     docmost_url: str = ""
@@ -430,6 +434,7 @@ class SettingsUpdate(BaseModel):
     folder_url_encounters: str = ""
     folder_url_items: str = ""
     folder_url_factions: str = ""
+    folder_url_players: str = ""
 
 
 class TestPageUrlRequest(BaseModel):
