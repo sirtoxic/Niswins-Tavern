@@ -117,9 +117,9 @@ Strictly follow the rarity rule above for how many bonuses and abilities to incl
 
 
 async def generate_item(req: GenerateItemRequest) -> tuple:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-    message = client.messages.create(
+    message = await client.messages.create(
         model=MODEL,
         max_tokens=4000,
         system=_SYSTEM_PROMPT,

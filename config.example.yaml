@@ -1,3 +1,6 @@
+anthropic:
+  api_key: "your-anthropic-api-key-here"
+
 docmost:
   url: "https://your-docmost-instance.example.com/api"
   username: "your-docmost-email@example.com"

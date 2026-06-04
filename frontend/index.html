@@ -136,6 +136,7 @@
         <div>
           <label class="text-xs text-gray-400 block mb-1">Concept / Description</label>
           <textarea id="concept" rows="3" placeholder="e.g. A grizzled ex-soldier who drinks too much and talks to their sword..." class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-concept" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 1000</span>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
@@ -145,11 +146,12 @@
           </div>
           <div>
             <label class="text-xs text-gray-400 block mb-1">Class</label>
-            <select id="charClass" class="input-field text-sm">
+            <select id="charClass" class="input-field text-sm" onchange="rollForgeStats()">
               <option value="Artificer">Artificer</option>
               <option value="Barbarian">Barbarian</option>
               <option value="Bard">Bard</option>
               <option value="Cleric">Cleric</option>
+              <option value="Commoner">Commoner</option>
               <option value="Druid">Druid</option>
               <option value="Fighter" selected>Fighter</option>
               <option value="Monk">Monk</option>
@@ -187,8 +189,25 @@
         </div>
 
         <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs text-gray-400">Ability Scores <span class="text-gray-600">(local roll)</span></label>
+            <button onclick="rollForgeStats()" class="text-xs text-gold hover:underline">&#8635; Re-roll</button>
+          </div>
+          <div class="grid grid-cols-6 gap-1 text-center">
+            <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">STR</div><div id="forge_str" class="text-sm font-bold text-parchment">—</div></div>
+            <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">DEX</div><div id="forge_dex" class="text-sm font-bold text-parchment">—</div></div>
+            <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">CON</div><div id="forge_con" class="text-sm font-bold text-parchment">—</div></div>
+            <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">INT</div><div id="forge_int" class="text-sm font-bold text-parchment">—</div></div>
+            <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">WIS</div><div id="forge_wis" class="text-sm font-bold text-parchment">—</div></div>
+            <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">CHA</div><div id="forge_cha" class="text-sm font-bold text-parchment">—</div></div>
+          </div>
+          <p id="forgeRollHint" class="text-[10px] text-gray-600 mt-1 leading-tight">Rolls 1–20 until ≥3 exceed 12. Best values assigned to class primary stats.</p>
+        </div>
+
+        <div>
           <label class="text-xs text-gray-400 block mb-1">Appearance</label>
           <textarea id="appearance" rows="2" placeholder="Tall, lean, with silver-streaked black hair and tired eyes..." class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-appearance" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 1000</span>
         </div>
 
         <div>
@@ -203,6 +222,7 @@
         <div>
           <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
           <textarea id="notes" rows="2" placeholder="Has a missing left hand, replaced with a prosthetic..." class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-notes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
         </div>
 
         <div class="flex items-start gap-2 pt-1">
@@ -278,6 +298,7 @@
         <div>
           <label class="text-xs text-gray-400 block mb-1">Concept / Description</label>
           <textarea id="itemConcept" rows="3" placeholder="e.g. A dagger once carried by an assassin who never missed her mark..." class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-itemConcept" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 1000</span>
         </div>
 
         <div>
@@ -388,6 +409,7 @@
         <div>
           <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
           <textarea id="itemNotes" rows="2" placeholder="Once belonged to a frost giant jarl, has a grudge against dragons…" class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-itemNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
         </div>
 
         <button id="generateItemBtn" onclick="generateItem()" class="btn-primary w-full flex items-center justify-center gap-2">
@@ -505,6 +527,7 @@
         <div>
           <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
           <textarea id="shopNotes" rows="2" placeholder="e.g. Located in a seedy dockside district, run by a secretive mage…" class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-shopNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
         </div>
 
         <button id="generateShopBtn" onclick="generateShop()" class="btn-primary w-full flex items-center justify-center gap-2">
@@ -564,6 +587,7 @@
         <div>
           <label class="text-xs text-gray-400 block mb-1">Concept / Theme <span class="text-gray-600">(optional)</span></label>
           <textarea id="factionConcept" rows="3" placeholder="e.g. A shadowy merchant guild that secretly controls the city's food supply…" class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-factionConcept" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 1000</span>
         </div>
 
         <div>
@@ -640,6 +664,7 @@
         <div>
           <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
           <textarea id="factionNotes" rows="2" placeholder="Founded by a disgraced noble, rivals with the city watch…" class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-factionNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
         </div>
 
         <button id="generateFactionBtn" onclick="generateFaction()" class="btn-primary w-full flex items-center justify-center gap-2">
@@ -714,6 +739,7 @@
           <div>
             <label class="text-xs text-gray-400 block mb-1">Concept / Description</label>
             <textarea id="pcConcept" rows="3" placeholder="e.g. A disgraced noble who took up the sword to reclaim her family's honour…" class="input-field resize-none text-sm"></textarea>
+            <span id="cnt-pcConcept" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 1000</span>
           </div>
           <div class="grid grid-cols-2 gap-2">
             <div>
@@ -722,11 +748,12 @@
             </div>
             <div>
               <label class="text-xs text-gray-400 block mb-1">Class</label>
-              <select id="pcClass" class="input-field text-sm">
+              <select id="pcClass" class="input-field text-sm" onchange="rollPcStats()">
                 <option value="Artificer">Artificer</option>
                 <option value="Barbarian">Barbarian</option>
                 <option value="Bard">Bard</option>
                 <option value="Cleric">Cleric</option>
+                <option value="Commoner">Commoner</option>
                 <option value="Druid">Druid</option>
                 <option value="Fighter" selected>Fighter</option>
                 <option value="Monk">Monk</option>
@@ -762,12 +789,29 @@
             </div>
           </div>
           <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-xs text-gray-400">Ability Scores <span class="text-gray-600">(local roll)</span></label>
+              <button onclick="rollPcStats()" class="text-xs text-gold hover:underline">&#8635; Re-roll</button>
+            </div>
+            <div class="grid grid-cols-6 gap-1 text-center">
+              <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">STR</div><div id="pcgen_str" class="text-sm font-bold text-parchment">—</div></div>
+              <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">DEX</div><div id="pcgen_dex" class="text-sm font-bold text-parchment">—</div></div>
+              <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">CON</div><div id="pcgen_con" class="text-sm font-bold text-parchment">—</div></div>
+              <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">INT</div><div id="pcgen_int" class="text-sm font-bold text-parchment">—</div></div>
+              <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">WIS</div><div id="pcgen_wis" class="text-sm font-bold text-parchment">—</div></div>
+              <div class="bg-surface-2 rounded p-1.5"><div class="text-[10px] text-gray-500 font-medium">CHA</div><div id="pcgen_cha" class="text-sm font-bold text-parchment">—</div></div>
+            </div>
+            <p id="pcgenRollHint" class="text-[10px] text-gray-600 mt-1 leading-tight">Rolls 1–20 until ≥3 exceed 12. Best values assigned to class primary stats.</p>
+          </div>
+          <div>
             <label class="text-xs text-gray-400 block mb-1">Appearance <span class="text-gray-600">(optional)</span></label>
             <textarea id="pcAppearance" rows="2" placeholder="Tall, lean, sharp grey eyes…" class="input-field resize-none text-sm"></textarea>
+            <span id="cnt-pcAppearance" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 1000</span>
           </div>
           <div>
             <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
             <textarea id="pcNotes" rows="2" placeholder="Has a scar across her cheek, secretly afraid of the dark…" class="input-field resize-none text-sm"></textarea>
+            <span id="cnt-pcNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
           </div>
           <button id="generatePcBtn" onclick="generatePlayerCharacter()" class="btn-primary w-full flex items-center justify-center gap-2">
             <svg id="generatePcSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
@@ -801,6 +845,7 @@
                 <option value="Barbarian">Barbarian</option>
                 <option value="Bard">Bard</option>
                 <option value="Cleric">Cleric</option>
+                <option value="Commoner">Commoner</option>
                 <option value="Druid">Druid</option>
                 <option value="Fighter" selected>Fighter</option>
                 <option value="Monk">Monk</option>
@@ -1210,6 +1255,82 @@
         </div>
       </div>
 
+      <!-- Stat Roll Settings -->
+      <div class="card p-4 mb-6">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-dice text-gold"></i> Ability Score Rolling
+        </h2>
+        <p class="text-xs text-gray-500 mb-3">Controls the reroll rule used when locally generating ability scores for characters and NPCs.</p>
+        <div class="flex items-center gap-3 flex-wrap">
+          <label class="text-xs text-gray-400 whitespace-nowrap">Reroll until at least</label>
+          <input id="rollMinCount" type="number" min="1" max="6" value="3" class="input-field text-sm w-16 text-center" oninput="localStorage.setItem('rollMinCount', this.value)" />
+          <label class="text-xs text-gray-400 whitespace-nowrap">stats exceed</label>
+          <input id="rollMinValue" type="number" min="1" max="20" value="12" class="input-field text-sm w-16 text-center" oninput="localStorage.setItem('rollMinValue', this.value)" />
+        </div>
+        <p class="text-[10px] text-gray-600 mt-2 leading-tight">Default: 3 stats above 12. Changes apply to the next roll.</p>
+      </div>
+
+      <!-- Generation Limits -->
+      <div class="card p-4 mb-6">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-ruler text-gold"></i> Generation Limits
+        </h2>
+        <p class="text-xs text-gray-500 mb-3">Controls maximum input length to keep prompt sizes and API costs manageable. Changes apply after saving.</p>
+        <div class="space-y-3">
+          <div class="flex items-center gap-3 flex-wrap">
+            <label class="text-xs text-gray-400 w-44">Concept / Appearance fields</label>
+            <input id="settingMaxConceptLength" type="number" min="100" max="10000" value="1000" class="input-field text-sm w-24 text-center" />
+            <span class="text-xs text-gray-600">characters max</span>
+          </div>
+          <div class="flex items-center gap-3 flex-wrap">
+            <label class="text-xs text-gray-400 w-44">Additional Notes fields</label>
+            <input id="settingMaxNotesLength" type="number" min="50" max="5000" value="500" class="input-field text-sm w-24 text-center" />
+            <span class="text-xs text-gray-600">characters max</span>
+          </div>
+          <div class="flex items-center gap-3 flex-wrap">
+            <label class="text-xs text-gray-400 w-44">Character level</label>
+            <input id="settingMaxCharacterLevel" type="number" min="1" max="20" value="20" class="input-field text-sm w-24 text-center" />
+            <span class="text-xs text-gray-600">max (1–20)</span>
+          </div>
+          <div class="flex items-center gap-3 flex-wrap">
+            <label class="text-xs text-gray-400 w-44">Shop items per generation</label>
+            <input id="settingMaxShopItems" type="number" min="1" max="30" value="20" class="input-field text-sm w-24 text-center" />
+            <span class="text-xs text-gray-600">max items</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Token Usage Stats -->
+      <div class="card p-4 mb-6">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-chart-bar text-gold"></i> Token Usage
+        </h2>
+        <div id="tokenStatsLoading" class="text-xs text-gray-500 italic">Loading…</div>
+        <div id="tokenStatsPanel" class="hidden">
+          <div class="grid grid-cols-2 gap-4 mb-3">
+            <div class="bg-surface-2 rounded p-3">
+              <div class="text-xs text-gray-400 mb-2 font-medium">All Time</div>
+              <div class="space-y-1 text-xs">
+                <div class="flex justify-between"><span class="text-gray-400">Input tokens</span><span id="statsAllInput" class="text-gray-200 font-mono">—</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Output tokens</span><span id="statsAllOutput" class="text-gray-200 font-mono">—</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Total tokens</span><span id="statsAllTotal" class="text-gray-200 font-mono font-semibold">—</span></div>
+                <div class="flex justify-between border-t border-gray-700 pt-1 mt-1"><span class="text-gray-400">Est. cost</span><span id="statsAllCost" class="text-gold font-mono font-semibold">—</span></div>
+              </div>
+            </div>
+            <div class="bg-surface-2 rounded p-3">
+              <div class="text-xs text-gray-400 mb-2 font-medium">This Month (<span id="statsMonthLabel">—</span>)</div>
+              <div class="space-y-1 text-xs">
+                <div class="flex justify-between"><span class="text-gray-400">Input tokens</span><span id="statsMonthInput" class="text-gray-200 font-mono">—</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Output tokens</span><span id="statsMonthOutput" class="text-gray-200 font-mono">—</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Total tokens</span><span id="statsMonthTotal" class="text-gray-200 font-mono font-semibold">—</span></div>
+                <div class="flex justify-between border-t border-gray-700 pt-1 mt-1"><span class="text-gray-400">Est. cost</span><span id="statsMonthCost" class="text-gold font-mono font-semibold">—</span></div>
+              </div>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500">Costs are estimates based on published model pricing. Only generations made through this app are counted.</p>
+        </div>
+      </div>
+
       <!-- Save -->
       <div class="flex items-center gap-3 pb-4">
         <button onclick="saveSettings()" id="settingsSaveBtn" class="btn-primary flex items-center gap-2">
@@ -1286,11 +1407,11 @@
             <div>
               <label class="text-xs text-gray-400 block mb-1">Class</label>
               <select id="genModalNpcClass" class="input-field text-sm w-full">
-                <option value="Commoner">Commoner</option>
                 <option value="Artificer">Artificer</option>
                 <option value="Barbarian">Barbarian</option>
                 <option value="Bard">Bard</option>
                 <option value="Cleric">Cleric</option>
+                <option value="Commoner" selected>Commoner</option>
                 <option value="Druid">Druid</option>
                 <option value="Fighter">Fighter</option>
                 <option value="Monk">Monk</option>
@@ -1361,6 +1482,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script type="module" src="main.js"></script>
 </body>
 </html>

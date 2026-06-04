@@ -106,9 +106,9 @@ Generate exactly {req.item_count} items. Distribute rarities naturally across: {
 
 
 async def generate_shop(req: GenerateShopRequest) -> tuple:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-    message = client.messages.create(
+    message = await client.messages.create(
         model=MODEL,
         max_tokens=8192,
         system=_SYSTEM_PROMPT,
@@ -143,7 +143,7 @@ async def generate_shop(req: GenerateShopRequest) -> tuple:
 
 async def generate_shop_staff(shop: Shop, is_shopkeeper: bool = False) -> dict:
     """Generate a new shopkeeper or staff member for an existing shop. Returns raw dict."""
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     overview_excerpt = shop.description[:400] if shop.description else ""
 
@@ -173,7 +173,7 @@ Description: {overview_excerpt}
 Return ONLY a JSON object matching this schema:
 {schema}"""
 
-    message = client.messages.create(
+    message = await client.messages.create(
         model=MODEL,
         max_tokens=512,
         messages=[{"role": "user", "content": prompt}],

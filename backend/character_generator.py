@@ -107,10 +107,11 @@ def build_user_prompt(req: GenerateRequest) -> str:
     if req.manual_ability_scores:
         s = req.manual_ability_scores
         manual_scores_section = (
-            f"\n\nFIXED ABILITY SCORES — the player has provided these totals (racial bonuses already included):\n"
+            f"\n\nFIXED ABILITY SCORES — these totals have been pre-rolled and must be used exactly:\n"
             f"STR: {s.get('str', 10)}, DEX: {s.get('dex', 10)}, CON: {s.get('con', 10)}, "
             f"INT: {s.get('int', 10)}, WIS: {s.get('wis', 10)}, CHA: {s.get('cha', 10)}\n"
-            f"Set total to these values exactly. Set base + racial_bonus = total (split sensibly for the race, "
+            f"Set the total field for each ability score to exactly these values. "
+            f"Distribute base + racial_bonus to reach these totals (use sensible racial bonuses for the race, "
             f"but the total MUST equal the provided values). Do not invent different scores."
         )
 
@@ -262,11 +263,11 @@ MODEL = "claude-sonnet-4-6"
 
 
 async def generate_character(req: GenerateRequest) -> tuple:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     system = SYSTEM_PROMPT + (GENERIC_NPC_SYSTEM_ADDENDUM if req.generic_npc else "")
 
-    message = client.messages.create(
+    message = await client.messages.create(
         model=MODEL,
         max_tokens=16000,
         system=system,

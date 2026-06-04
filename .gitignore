@@ -4,6 +4,11 @@ config.yaml
 
 # Generated content
 history/
+token_stats.json
+TODO.md
+
+# Claude Code
+.claude/
 
 # Python
 __pycache__/

@@ -94,9 +94,9 @@ Generate 3–5 goals, 3–5 methods, 2–3 secrets, 2–4 notable members, 1–3
 
 
 async def generate_faction(req: GenerateFactionRequest) -> tuple:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-    message = client.messages.create(
+    message = await client.messages.create(
         model=MODEL,
         max_tokens=4096,
         system=_SYSTEM_PROMPT,
@@ -131,7 +131,7 @@ async def generate_faction(req: GenerateFactionRequest) -> tuple:
 
 async def generate_faction_member(faction: Faction, is_leader: bool = False) -> dict:
     """Generate a new leader or notable member for an existing faction. Returns raw dict."""
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     overview_excerpt = faction.overview[:400] if faction.overview else ""
 
@@ -153,7 +153,7 @@ Overview: {overview_excerpt}
 Return ONLY a JSON object matching this schema:
 {schema}"""
 
-    message = client.messages.create(
+    message = await client.messages.create(
         model=MODEL,
         max_tokens=512,
         messages=[{"role": "user", "content": prompt}],

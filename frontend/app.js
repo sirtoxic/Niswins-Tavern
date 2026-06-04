@@ -54,6 +54,76 @@ let currentPlayerCharacter = null;
 let currentPlayerCharacterId = null;
 let partyEntries = [];
 let selectedPcMode = 'generate';
+let forgeRolledStats = null;
+let pcRolledStats = null;
+
+// Ability score priority by class — ordered [most important → least important]
+// Used to assign the highest rolled values to the most critical stats.
+const _CLASS_STAT_PRIORITY = {
+  Artificer: ['int', 'con', 'dex', 'wis', 'cha', 'str'],
+  Barbarian: ['str', 'con', 'dex', 'wis', 'cha', 'int'],
+  Bard:      ['cha', 'dex', 'con', 'int', 'wis', 'str'],
+  Cleric:    ['wis', 'con', 'str', 'cha', 'dex', 'int'],
+  Commoner:  ['con', 'wis', 'str', 'dex', 'cha', 'int'],
+  Druid:     ['wis', 'con', 'dex', 'int', 'cha', 'str'],
+  Fighter:   ['str', 'con', 'dex', 'wis', 'cha', 'int'],
+  Monk:      ['dex', 'wis', 'con', 'str', 'int', 'cha'],
+  Paladin:   ['str', 'cha', 'con', 'wis', 'dex', 'int'],
+  Ranger:    ['dex', 'wis', 'con', 'str', 'int', 'cha'],
+  Rogue:     ['dex', 'con', 'int', 'wis', 'cha', 'str'],
+  Sorcerer:  ['cha', 'con', 'dex', 'int', 'wis', 'str'],
+  Warlock:   ['cha', 'con', 'dex', 'wis', 'int', 'str'],
+  Wizard:    ['int', 'con', 'dex', 'wis', 'cha', 'str'],
+};
+
+function _getRollThreshold() {
+  const countEl = document.getElementById('rollMinCount');
+  const valueEl = document.getElementById('rollMinValue');
+  const count = Math.min(6, Math.max(1, parseInt(countEl?.value) || 3));
+  const value = Math.min(20, Math.max(1, parseInt(valueEl?.value) || 12));
+  return { count, value };
+}
+
+function _rollAbilityScores(className) {
+  const { count, value } = _getRollThreshold();
+  let rolls;
+  do {
+    rolls = Array.from({length: 6}, () => Math.floor(Math.random() * 20) + 1);
+  } while (rolls.filter(v => v > value).length < count);
+  const priority = _CLASS_STAT_PRIORITY[className] || _CLASS_STAT_PRIORITY['Fighter'];
+  const sorted = [...rolls].sort((a, b) => b - a);
+  const result = {};
+  priority.forEach((stat, i) => result[stat] = sorted[i]);
+  return result;
+}
+
+function _displayRolledStats(stats, prefix) {
+  for (const key of ['str', 'dex', 'con', 'int', 'wis', 'cha']) {
+    const el = document.getElementById(`${prefix}_${key}`);
+    if (el) el.textContent = stats[key];
+  }
+}
+
+function _updateRollHint(hintId) {
+  const el = document.getElementById(hintId);
+  if (!el) return;
+  const { count, value } = _getRollThreshold();
+  el.textContent = `Rolls 1–20 until ≥${count} exceed ${value}. Best values assigned to class primary stats.`;
+}
+
+function rollForgeStats() {
+  const cls = document.getElementById('charClass').value;
+  forgeRolledStats = _rollAbilityScores(cls);
+  _displayRolledStats(forgeRolledStats, 'forge');
+  _updateRollHint('forgeRollHint');
+}
+
+function rollPcStats() {
+  const cls = document.getElementById('pcClass').value;
+  pcRolledStats = _rollAbilityScores(cls);
+  _displayRolledStats(pcRolledStats, 'pcgen');
+  _updateRollHint('pcgenRollHint');
+}
 
 const RARITY_COLORS = {
   Common:    '#9d9d9d',
@@ -138,6 +208,13 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('DOMContentLoaded', () => {
   const view = HASH_VIEWS[location.hash] || 'forge';
   switchView(view, false);
+  // Restore saved roll threshold preferences
+  const savedCount = localStorage.getItem('rollMinCount');
+  const savedValue = localStorage.getItem('rollMinValue');
+  if (savedCount) { const el = document.getElementById('rollMinCount'); if (el) el.value = savedCount; }
+  if (savedValue) { const el = document.getElementById('rollMinValue'); if (el) el.value = savedValue; }
+  rollForgeStats();
+  rollPcStats();
 });
 
 function updateRarityBadge() {
@@ -530,6 +607,7 @@ async function generatePlayerCharacter() {
     alert('Please fill in Concept and Race before generating.');
     return;
   }
+  if (!pcRolledStats) rollPcStats();
   await _submitPcGeneration({
     concept,
     race,
@@ -541,6 +619,7 @@ async function generatePlayerCharacter() {
     additional_notes: document.getElementById('pcNotes').value.trim(),
     generic_npc: false,
     player_name: document.getElementById('pcPlayerName').value.trim() || null,
+    manual_ability_scores: pcRolledStats,
   }, 'generatePcBtn', 'generatePcSpinner', 'generatePcBtnText', 'Generate Character', 'pcGenTokenUsage');
 }
 
@@ -717,7 +796,45 @@ function exportPcToFoundryJSON() {
 // Settings
 // -----------------------------------------------------------------------
 
+async function loadTokenStats() {
+  const loadingEl = document.getElementById('tokenStatsLoading');
+  const panelEl = document.getElementById('tokenStatsPanel');
+  loadingEl.textContent = 'Loading…';
+  loadingEl.classList.remove('hidden');
+  panelEl.classList.add('hidden');
+  try {
+    const r = await fetch('/api/token-stats');
+    if (!r.ok) throw new Error();
+    const stats = await r.json();
+
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const monthLabel = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+    const month = stats.monthly?.[monthKey] || { input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0 };
+    const all = stats.all_time || { input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0 };
+
+    const fmt = n => n.toLocaleString();
+    const fmtCost = c => c < 0.001 ? `< $0.001` : `$${c.toFixed(4)}`;
+
+    document.getElementById('statsMonthLabel').textContent = monthLabel;
+    document.getElementById('statsAllInput').textContent = fmt(all.input_tokens);
+    document.getElementById('statsAllOutput').textContent = fmt(all.output_tokens);
+    document.getElementById('statsAllTotal').textContent = fmt(all.total_tokens);
+    document.getElementById('statsAllCost').textContent = fmtCost(all.cost_usd);
+    document.getElementById('statsMonthInput').textContent = fmt(month.input_tokens);
+    document.getElementById('statsMonthOutput').textContent = fmt(month.output_tokens);
+    document.getElementById('statsMonthTotal').textContent = fmt(month.total_tokens);
+    document.getElementById('statsMonthCost').textContent = fmtCost(month.cost_usd);
+
+    loadingEl.classList.add('hidden');
+    panelEl.classList.remove('hidden');
+  } catch {
+    loadingEl.textContent = 'Could not load token stats.';
+  }
+}
+
 async function loadSettings() {
+  loadTokenStats();
   try {
     const r = await fetch('/api/settings');
     if (!r.ok) throw new Error('Failed to load settings');
@@ -871,6 +988,7 @@ async function generateCharacter() {
   document.getElementById('tokenUsage').classList.add('hidden');
 
   try {
+    if (!forgeRolledStats) rollForgeStats();
     const body = {
       concept,
       race,
@@ -881,6 +999,7 @@ async function generateCharacter() {
       background_detail: selectedDetail,
       additional_notes: document.getElementById('notes').value.trim(),
       generic_npc: document.getElementById('genericNpcMode').checked,
+      manual_ability_scores: forgeRolledStats,
     };
 
     const r = await fetch('/api/generate', {

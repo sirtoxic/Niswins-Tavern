@@ -34,6 +34,7 @@
 # Static files: the /frontend directory is served at / with index.html as the fallback.
 
 import os
+import json
 import yaml
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,9 +42,8 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from dotenv import load_dotenv, dotenv_values, set_key
 
-from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, LinkShopNpcRequest, RegenerateShopStaffRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest, GenerateFactionRequest, SaveFactionRequest, LinkFactionNpcRequest, RegenerateMemberRequest
+from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, LinkShopNpcRequest, RegenerateShopStaffRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest, GenerateFactionRequest, SaveFactionRequest, LinkFactionNpcRequest, RegenerateMemberRequest, set_validation_limits
 from character_generator import generate_character
 from item_generator import generate_item
 from shop_generator import generate_shop, generate_shop_staff
@@ -53,16 +53,40 @@ import history_store
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
-ENV_PATH = Path(__file__).parent.parent / ".env"
+TOKEN_STATS_PATH = Path(__file__).parent.parent / "token_stats.json"
+
+
+def _load_token_stats() -> dict:
+    if TOKEN_STATS_PATH.exists():
+        try:
+            return json.loads(TOKEN_STATS_PATH.read_text())
+        except Exception:
+            pass
+    return {"all_time": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0}, "monthly": {}}
+
+
+def _update_token_stats(usage: dict) -> None:
+    stats = _load_token_stats()
+    month_key = datetime.now(timezone.utc).strftime("%Y-%m")
+    for bucket in [stats["all_time"], stats["monthly"].setdefault(month_key, {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0})]:
+        bucket["input_tokens"] += usage.get("input_tokens", 0)
+        bucket["output_tokens"] += usage.get("output_tokens", 0)
+        bucket["total_tokens"] += usage.get("total_tokens", 0)
+        bucket["cost_usd"] = round(bucket["cost_usd"] + usage.get("cost_usd", 0.0), 6)
+    TOKEN_STATS_PATH.write_text(json.dumps(stats, indent=2))
 
 
 def _ensure_config_files() -> None:
-    """Create .env and config.yaml with defaults on first run if they don't exist."""
-    if not ENV_PATH.exists():
-        ENV_PATH.write_text("ANTHROPIC_API_KEY=\n")
-
+    """Create config.yaml with defaults on first run if it doesn't exist."""
     if not CONFIG_PATH.exists():
         default_cfg = {
+            "anthropic": {"api_key": ""},
+            "validation": {
+                "max_concept_length": 1000,
+                "max_notes_length": 500,
+                "max_character_level": 20,
+                "max_shop_items": 20,
+            },
             "docmost": {
                 "url": "",
                 "username": "",
@@ -80,10 +104,45 @@ def _ensure_config_files() -> None:
         }
         with open(CONFIG_PATH, "w") as f:
             yaml.dump(default_cfg, f, default_flow_style=False, allow_unicode=True)
+    else:
+        # One-time migration: if api_key missing from config but .env exists, copy it over
+        cfg = yaml.safe_load(CONFIG_PATH.read_text()) or {}
+        if not cfg.get("anthropic", {}).get("api_key"):
+            env_path = CONFIG_PATH.parent / ".env"
+            if env_path.exists():
+                api_key = _parse_env_file(env_path).get("ANTHROPIC_API_KEY", "")
+                if api_key:
+                    cfg.setdefault("anthropic", {})["api_key"] = api_key
+                    with open(CONFIG_PATH, "w") as f:
+                        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+
+def _parse_env_file(path: Path) -> dict:
+    vals = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            vals[k.strip()] = v.strip().strip("'\"")
+    return vals
+
+
+def _load_api_key_from_config() -> None:
+    """Read api_key from config.yaml and expose it as an environment variable."""
+    cfg = yaml.safe_load(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else {}
+    api_key = cfg.get("anthropic", {}).get("api_key", "")
+    if api_key:
+        os.environ["ANTHROPIC_API_KEY"] = api_key
+
+
+def _load_validation_limits_from_config() -> None:
+    cfg = yaml.safe_load(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else {}
+    set_validation_limits(cfg.get("validation", {}))
 
 
 _ensure_config_files()
-load_dotenv(ENV_PATH)
+_load_api_key_from_config()
+_load_validation_limits_from_config()
 
 app = FastAPI(title="Niswins Tavern")
 docmost = DocmostClient()
@@ -113,12 +172,11 @@ async def get_config():
 
 @app.get("/api/settings")
 async def get_settings():
-    env_vals = dotenv_values(str(ENV_PATH)) if ENV_PATH.exists() else {}
-    api_key = env_vals.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "")
-
     cfg = _load_config()
+    api_key = cfg.get("anthropic", {}).get("api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
     dcfg = cfg.get("docmost", {})
     folder_urls = dcfg.get("folder_urls", {})
+    vlimits = cfg.get("validation", {})
 
     return {
         "campaign_name": cfg.get("campaign_name", ""),
@@ -134,22 +192,34 @@ async def get_settings():
         "folder_url_items": folder_urls.get("items", ""),
         "folder_url_factions": folder_urls.get("factions", ""),
         "folder_url_players": folder_urls.get("players", ""),
+        "max_concept_length": vlimits.get("max_concept_length", 1000),
+        "max_notes_length": vlimits.get("max_notes_length", 500),
+        "max_character_level": vlimits.get("max_character_level", 20),
+        "max_shop_items": vlimits.get("max_shop_items", 20),
     }
 
 
 @app.post("/api/settings")
 async def update_settings(req: SettingsUpdate):
     try:
-        # Write API key to .env and update live environment
-        set_key(str(ENV_PATH), "ANTHROPIC_API_KEY", req.anthropic_api_key)
-        os.environ["ANTHROPIC_API_KEY"] = req.anthropic_api_key
-
-        # Build and write config.yaml
+        # Build and write config.yaml (all settings in one place)
         try:
             with open(CONFIG_PATH) as f:
                 cfg = yaml.safe_load(f) or {}
         except FileNotFoundError:
             cfg = {}
+
+        cfg["anthropic"] = {"api_key": req.anthropic_api_key}
+        os.environ["ANTHROPIC_API_KEY"] = req.anthropic_api_key
+
+        new_limits = {
+            "max_concept_length": req.max_concept_length,
+            "max_notes_length": req.max_notes_length,
+            "max_character_level": req.max_character_level,
+            "max_shop_items": req.max_shop_items,
+        }
+        cfg["validation"] = new_limits
+        set_validation_limits(new_limits)
 
         cfg["docmost"] = {
             "url": req.docmost_url,
@@ -192,7 +262,7 @@ async def test_page_url(req: TestPageUrlRequest):
 @app.post("/api/generate")
 async def api_generate(req: GenerateRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
         character, usage = await generate_character(req)
 
@@ -212,9 +282,11 @@ async def api_generate(req: GenerateRequest):
             "docmost_page_id": None,
             "docmost_url": None,
             "generation_params": req.model_dump(),
+            "token_usage": usage,
             "character": character.model_dump(),
         }
         history_store.save_entry(entry)
+        _update_token_stats(usage)
 
         return {"character": character, "usage": usage, "history_id": entry_id}
     except Exception as e:
@@ -257,7 +329,7 @@ async def api_save(req: SaveRequest):
 @app.post("/api/generate-item")
 async def api_generate_item(req: GenerateItemRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
         item, usage = await generate_item(req)
 
@@ -275,9 +347,11 @@ async def api_generate_item(req: GenerateItemRequest):
             "docmost_page_id": None,
             "docmost_url": None,
             "generation_params": req.model_dump(),
+            "token_usage": usage,
             "item": item.model_dump(),
         }
         history_store.save_entry(entry)
+        _update_token_stats(usage)
 
         return {"item": item, "usage": usage, "history_id": entry_id}
     except Exception as e:
@@ -310,7 +384,7 @@ async def api_save_item(req: SaveItemRequest):
 @app.post("/api/generate-shop")
 async def api_generate_shop(req: GenerateShopRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
         shop, usage = await generate_shop(req)
 
@@ -327,9 +401,11 @@ async def api_generate_shop(req: GenerateShopRequest):
             "docmost_page_id": None,
             "docmost_url": None,
             "generation_params": req.model_dump(),
+            "token_usage": usage,
             "shop": shop.model_dump(),
         }
         history_store.save_entry(entry)
+        _update_token_stats(usage)
 
         return {"shop": shop, "usage": usage, "history_id": entry_id}
     except Exception as e:
@@ -434,7 +510,7 @@ async def link_shop_npc(shop_id: str, req: LinkShopNpcRequest):
 async def regenerate_shop_staff_endpoint(shop_id: str, req: RegenerateShopStaffRequest):
     """Generate a new shopkeeper or staff member for a shop. Returns member data only — caller saves."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
         entry = history_store.get_entry(shop_id)
         from models import Shop
@@ -450,7 +526,7 @@ async def regenerate_shop_staff_endpoint(shop_id: str, req: RegenerateShopStaffR
 @app.post("/api/generate-faction")
 async def api_generate_faction(req: GenerateFactionRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
         faction, usage = await generate_faction(req)
 
@@ -467,9 +543,11 @@ async def api_generate_faction(req: GenerateFactionRequest):
             "docmost_page_id": None,
             "docmost_url": None,
             "generation_params": req.model_dump(),
+            "token_usage": usage,
             "faction": faction.model_dump(),
         }
         history_store.save_entry(entry)
+        _update_token_stats(usage)
 
         return {"faction": faction, "usage": usage, "history_id": entry_id}
     except Exception as e:
@@ -577,7 +655,7 @@ async def link_faction_npc(faction_id: str, req: LinkFactionNpcRequest):
 async def regenerate_faction_member_endpoint(faction_id: str, req: RegenerateMemberRequest):
     """Generate a new leader or notable member for a faction. Returns member data only — caller saves."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in .env")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
         entry = history_store.get_entry(faction_id)
         from models import Faction
@@ -625,6 +703,11 @@ async def update_history_entry(entry_id: str, req: UpdateEntryRequest):
         raise HTTPException(status_code=404, detail="History entry not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/token-stats")
+async def api_token_stats():
+    return _load_token_stats()
 
 
 @app.get("/api/history")

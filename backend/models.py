@@ -11,8 +11,20 @@
 #                    FactionMember, LinkFactionNpcRequest, RegenerateMemberRequest.
 # Settings / Util:   SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest.
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
+
+# Runtime validation limits — updated by set_validation_limits() on startup and after settings save.
+_limits: dict = {
+    "max_concept_length": 1000,
+    "max_notes_length": 500,
+    "max_character_level": 20,
+    "max_shop_items": 20,
+}
+
+
+def set_validation_limits(limits: dict) -> None:
+    _limits.update({k: v for k, v in limits.items() if k in _limits})
 
 
 class AbilityScore(BaseModel):
@@ -225,6 +237,27 @@ class GenerateRequest(BaseModel):
     is_player_character: bool = False
     manual_ability_scores: Optional[dict] = None  # {str, dex, con, int, wis, cha: int}
 
+    @field_validator('concept', 'appearance')
+    @classmethod
+    def _check_concept_length(cls, v: str) -> str:
+        if len(v) > _limits['max_concept_length']:
+            raise ValueError(f'Must be at most {_limits["max_concept_length"]} characters ({len(v)} given)')
+        return v
+
+    @field_validator('additional_notes')
+    @classmethod
+    def _check_notes_length(cls, v: str) -> str:
+        if len(v) > _limits['max_notes_length']:
+            raise ValueError(f'Must be at most {_limits["max_notes_length"]} characters ({len(v)} given)')
+        return v
+
+    @field_validator('level')
+    @classmethod
+    def _check_level(cls, v: int) -> int:
+        if v < 1 or v > _limits['max_character_level']:
+            raise ValueError(f'Level must be between 1 and {_limits["max_character_level"]}')
+        return v
+
 
 class SaveRequest(BaseModel):
     character: Character
@@ -276,6 +309,27 @@ class GenerateItemRequest(BaseModel):
     stat_bonus_target: str = ""    # e.g. "Strength", "Attack Rolls", "Dexterity Saving Throws"
     damage_type: str = ""          # e.g. "Fire", "Cold", "Necrotic" — relevant for weapons
     attunement: str = "auto"       # "auto" | "required" | "none"
+
+    @field_validator('concept')
+    @classmethod
+    def _check_concept_length(cls, v: str) -> str:
+        if len(v) > _limits['max_concept_length']:
+            raise ValueError(f'Must be at most {_limits["max_concept_length"]} characters ({len(v)} given)')
+        return v
+
+    @field_validator('additional_notes')
+    @classmethod
+    def _check_notes_length(cls, v: str) -> str:
+        if len(v) > _limits['max_notes_length']:
+            raise ValueError(f'Must be at most {_limits["max_notes_length"]} characters ({len(v)} given)')
+        return v
+
+    @field_validator('target_level_min', 'target_level_max')
+    @classmethod
+    def _check_target_level(cls, v: int) -> int:
+        if v < 1 or v > 20:
+            raise ValueError('Target level must be between 1 and 20')
+        return v
 
 
 class SaveItemRequest(BaseModel):
@@ -333,6 +387,20 @@ class GenerateShopRequest(BaseModel):
     rarities: list[str] = ["Common", "Uncommon"]
     detail_level: str = "medium"
     additional_notes: str = ""
+
+    @field_validator('item_count')
+    @classmethod
+    def _check_item_count(cls, v: int) -> int:
+        if v < 1 or v > _limits['max_shop_items']:
+            raise ValueError(f'Item count must be between 1 and {_limits["max_shop_items"]}')
+        return v
+
+    @field_validator('additional_notes')
+    @classmethod
+    def _check_notes_length(cls, v: str) -> str:
+        if len(v) > _limits['max_notes_length']:
+            raise ValueError(f'Must be at most {_limits["max_notes_length"]} characters ({len(v)} given)')
+        return v
 
 
 class SaveShopRequest(BaseModel):
@@ -402,6 +470,20 @@ class GenerateFactionRequest(BaseModel):
     region: str = ""
     additional_notes: str = ""
 
+    @field_validator('concept', 'region')
+    @classmethod
+    def _check_concept_length(cls, v: str) -> str:
+        if len(v) > _limits['max_concept_length']:
+            raise ValueError(f'Must be at most {_limits["max_concept_length"]} characters ({len(v)} given)')
+        return v
+
+    @field_validator('additional_notes')
+    @classmethod
+    def _check_notes_length(cls, v: str) -> str:
+        if len(v) > _limits['max_notes_length']:
+            raise ValueError(f'Must be at most {_limits["max_notes_length"]} characters ({len(v)} given)')
+        return v
+
 
 class SaveFactionRequest(BaseModel):
     faction: Faction
@@ -435,6 +517,10 @@ class SettingsUpdate(BaseModel):
     folder_url_items: str = ""
     folder_url_factions: str = ""
     folder_url_players: str = ""
+    max_concept_length: int = 1000
+    max_notes_length: int = 500
+    max_character_level: int = 20
+    max_shop_items: int = 20
 
 
 class TestPageUrlRequest(BaseModel):
