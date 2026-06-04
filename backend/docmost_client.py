@@ -44,7 +44,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
-from models import Character, Item, Shop, Faction
+from models import Character, Item, Shop, Faction, Monster
 
 _DEFAULT_FOLDER_NAMES: dict[str, str] = {
     "npcs": "NPCs",
@@ -873,4 +873,198 @@ class DocmostClient:
             logger.warning(f"Could not update faction type index: {e}")
 
         logger.info(f"Saved faction '{faction.name}' to Docmost (page {page_id}, url={page_url})")
+        return page_id, page_url
+
+    # ------------------------------------------------------------------
+    # Monster → Markdown
+    # ------------------------------------------------------------------
+
+    def _monster_to_markdown(self, monster: Monster) -> str:
+        lines = []
+
+        def h(level: int, text: str):
+            lines.append(f"{'#' * level} {text}\n")
+
+        def sign(n: int) -> str:
+            return f"+{n}" if n >= 0 else str(n)
+
+        h(1, monster.name)
+        subtype_str = f" ({monster.subtype})" if monster.subtype else ""
+        lines.append(f"*{monster.size} {monster.monster_type}{subtype_str}, {monster.alignment}*\n")
+
+        lines.append("---\n")
+
+        # Core stats line
+        speed = monster.speed
+        speed_parts = []
+        if speed.walk:
+            speed_parts.append(f"{speed.walk} ft.")
+        if speed.fly:
+            hover_note = " (hover)" if speed.hover else ""
+            speed_parts.append(f"fly {speed.fly} ft.{hover_note}")
+        if speed.swim:
+            speed_parts.append(f"swim {speed.swim} ft.")
+        if speed.burrow:
+            speed_parts.append(f"burrow {speed.burrow} ft.")
+        if speed.climb:
+            speed_parts.append(f"climb {speed.climb} ft.")
+        speed_str = ", ".join(speed_parts) or "0 ft."
+
+        ac_str = str(monster.armor_class)
+        if monster.armor_type:
+            ac_str += f" ({monster.armor_type})"
+
+        lines.append(
+            f"**Armor Class** {ac_str} · "
+            f"**Hit Points** {monster.hit_points} ({monster.hit_dice}) · "
+            f"**Speed** {speed_str}\n"
+        )
+
+        lines.append("---\n")
+
+        # Ability scores table
+        ability_names = ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+        ability_keys = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+        lines.append("| " + " | ".join(ability_names) + " |")
+        lines.append("|" + "|".join(["---"] * 6) + "|")
+        scores = []
+        for key in ability_keys:
+            ab = getattr(monster.ability_scores, key)
+            scores.append(f"{ab.score} ({sign(ab.modifier)})")
+        lines.append("| " + " | ".join(scores) + " |")
+        lines.append("")
+
+        lines.append("---\n")
+
+        # Properties
+        if monster.saving_throws:
+            saves = ", ".join(
+                f"{k.capitalize()[:3]} {sign(v)}" for k, v in monster.saving_throws.items()
+            )
+            lines.append(f"**Saving Throws** {saves}")
+        if monster.skills:
+            skills = ", ".join(
+                f"{k.replace('_', ' ').title()} {sign(v)}" for k, v in monster.skills.items()
+            )
+            lines.append(f"**Skills** {skills}")
+        if monster.damage_vulnerabilities:
+            lines.append(f"**Damage Vulnerabilities** {', '.join(monster.damage_vulnerabilities)}")
+        if monster.damage_resistances:
+            lines.append(f"**Damage Resistances** {', '.join(monster.damage_resistances)}")
+        if monster.damage_immunities:
+            lines.append(f"**Damage Immunities** {', '.join(monster.damage_immunities)}")
+        if monster.condition_immunities:
+            lines.append(f"**Condition Immunities** {', '.join(monster.condition_immunities)}")
+        if monster.senses:
+            lines.append(f"**Senses** {', '.join(monster.senses)}, passive Perception {monster.passive_perception}")
+        else:
+            lines.append(f"**Senses** passive Perception {monster.passive_perception}")
+        if monster.languages:
+            lines.append(f"**Languages** {', '.join(monster.languages)}")
+        else:
+            lines.append("**Languages** —")
+        lines.append(
+            f"**Challenge** {monster.challenge_rating} ({monster.xp:,} XP) · "
+            f"**Proficiency Bonus** {sign(monster.proficiency_bonus)}"
+        )
+        lines.append("")
+
+        lines.append("---\n")
+
+        # Special traits
+        if monster.special_traits:
+            for trait in monster.special_traits:
+                lines.append(f"***{trait.name}.*** {trait.description}\n")
+
+        # Actions
+        if monster.actions:
+            h(2, "Actions")
+            for action in monster.actions:
+                lines.append(f"***{action.name}.*** {action.description}\n")
+
+        # Bonus Actions
+        if monster.bonus_actions:
+            h(2, "Bonus Actions")
+            for ba in monster.bonus_actions:
+                lines.append(f"***{ba.name}.*** {ba.description}\n")
+
+        # Reactions
+        if monster.reactions:
+            h(2, "Reactions")
+            for reaction in monster.reactions:
+                lines.append(f"***{reaction.name}.*** {reaction.description}\n")
+
+        # Legendary Actions
+        if monster.legendary_actions:
+            h(2, "Legendary Actions")
+            if monster.legendary_resistance_count:
+                lines.append(
+                    f"The {monster.name} can take {len(monster.legendary_actions)} legendary actions, "
+                    f"choosing from the options below. Only one legendary action option can be used at a time "
+                    f"and only at the end of another creature's turn. The {monster.name} regains spent legendary "
+                    f"actions at the start of its turn.\n"
+                )
+            for la in monster.legendary_actions:
+                cost_str = f" (Costs {la.cost} Actions)" if la.cost > 1 else ""
+                lines.append(f"***{la.name}{cost_str}.*** {la.description}\n")
+
+        # Lair Actions
+        if monster.lair_actions:
+            h(2, "Lair Actions")
+            for la in monster.lair_actions:
+                lines.append(f"***{la.name}.*** {la.description}\n")
+
+        # Flavor sections
+        if monster.description:
+            h(2, "Description")
+            lines.append(monster.description + "\n")
+
+        if monster.ecology:
+            h(2, "Ecology")
+            lines.append(monster.ecology + "\n")
+
+        if monster.tactics:
+            h(2, "Tactics")
+            lines.append(monster.tactics + "\n")
+
+        if monster.lore:
+            h(2, "Lore")
+            lines.append(monster.lore + "\n")
+
+        return "\n".join(lines)
+
+    async def save_monster(self, monster: Monster, existing_page_id: str | None = None) -> tuple[str, str]:
+        """Returns (page_id, page_url). Saves under Bestiary / {monster_type} / {name}."""
+        await self._ensure_auth()
+        await self._ensure_space()
+
+        if existing_page_id:
+            content = self._monster_to_markdown(monster) + self._sync_footer("Re-synced")
+            page_slug = await self._replace_page(existing_page_id, monster.name, content)
+            page_url = self._build_page_url(page_slug)
+            logger.info(f"Updated monster '{monster.name}' in Docmost (page {existing_page_id})")
+            return existing_page_id, page_url
+
+        content = self._monster_to_markdown(monster) + self._sync_footer("Created")
+        bestiary_root_id = await self._get_root_folder_page_id("bestiary")
+        type_folder_id = await self._get_or_create_folder_page(
+            self._space_id, monster.monster_type, parent_page_id=bestiary_root_id
+        )
+        page_data = await self._create_page(
+            space_id=self._space_id,
+            title=monster.name,
+            content=content,
+            parent_page_id=type_folder_id,
+        )
+        page_id = page_data["id"]
+        page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
+        page_url = self._build_page_url(page_slug)
+
+        entry = f"- **{monster.name}** — CR {monster.challenge_rating} {monster.size} {monster.monster_type}\n"
+        try:
+            await self._append_to_page(type_folder_id, entry)
+        except Exception as e:
+            logger.warning(f"Could not update bestiary type index: {e}")
+
+        logger.info(f"Saved monster '{monster.name}' to Docmost (page {page_id}, url={page_url})")
         return page_id, page_url

@@ -17,10 +17,12 @@ import { loadSettings } from './settings.js';
 
 export const VIEW_HASHES = {
   forge: '#npcs', items: '#items', shops: '#shops', factions: '#factions',
+  bestiary: '#bestiary',
   players: '#players', history: '#history', settings: '#settings',
 };
 export const HASH_VIEWS = {
   '#npcs': 'forge', '#items': 'items', '#shops': 'shops', '#factions': 'factions',
+  '#bestiary': 'bestiary',
   '#players': 'players', '#history': 'history', '#settings': 'settings',
 };
 
@@ -85,6 +87,7 @@ export function switchView(view, updateHash = true) {
   document.getElementById('viewItems').classList.toggle('hidden', view !== 'items');
   document.getElementById('viewShops').classList.toggle('hidden', view !== 'shops');
   document.getElementById('viewFactions').classList.toggle('hidden', view !== 'factions');
+  document.getElementById('viewBestiary').classList.toggle('hidden', view !== 'bestiary');
   document.getElementById('viewPlayers').classList.toggle('hidden', view !== 'players');
   document.getElementById('viewHistory').classList.toggle('hidden', view !== 'history');
   document.getElementById('viewSettings').classList.toggle('hidden', view !== 'settings');
@@ -92,6 +95,7 @@ export function switchView(view, updateHash = true) {
   document.getElementById('navItems').classList.toggle('nav-active', view === 'items');
   document.getElementById('navShops').classList.toggle('nav-active', view === 'shops');
   document.getElementById('navFactions').classList.toggle('nav-active', view === 'factions');
+  document.getElementById('navBestiary').classList.toggle('nav-active', view === 'bestiary');
   document.getElementById('navPlayers').classList.toggle('nav-active', view === 'players');
   document.getElementById('navHistory').classList.toggle('nav-active', view === 'history');
   document.getElementById('navSettings').classList.toggle('nav-active', view === 'settings');
@@ -353,8 +357,10 @@ const _COUNTER_FIELDS = [
   { id: 'itemConcept',    limitKey: 'max_concept_length' },
   { id: 'itemNotes',      limitKey: 'max_notes_length' },
   { id: 'shopNotes',      limitKey: 'max_notes_length' },
-  { id: 'factionConcept', limitKey: 'max_concept_length' },
+  { id: 'factionConcept',  limitKey: 'max_concept_length' },
   { id: 'factionNotes',   limitKey: 'max_notes_length' },
+  { id: 'bestiaryConcept', limitKey: 'max_concept_length' },
+  { id: 'bestiaryNotes',   limitKey: 'max_notes_length' },
   { id: 'pcConcept',      limitKey: 'max_concept_length' },
   { id: 'pcAppearance',   limitKey: 'max_concept_length' },
   { id: 'pcNotes',        limitKey: 'max_notes_length' },
@@ -454,6 +460,11 @@ import {
 } from './faction.js';
 
 import {
+  generateBestiary, saveBestiary, renderBestiarySheet,
+  _buildBestiaryEditForm, _collectBestiaryEdits,
+} from './bestiary.js';
+
+import {
   loadPartyRoster as _loadPartyRoster, renderPartyRoster, openPartyEntry,
   setPcMode, _submitPcGeneration, generatePlayerCharacter, createManualCharacter,
   addCurrentToParty, savePlayerCharacter, _populatePcStatInputs,
@@ -505,6 +516,10 @@ Object.assign(window, {
   generateFaction, saveFaction, renderFactionSheet, openFactionMemberModal,
   regenerateFactionMemberUI, addFactionMemberUI, removeFactionMemberUI,
   _saveFactionMemberChanges, _buildFactionEditForm, _collectFactionEdits,
+
+  // bestiary
+  generateBestiary, saveBestiary, renderBestiarySheet,
+  _buildBestiaryEditForm, _collectBestiaryEdits,
 
   // players
   loadPartyRoster: _loadPartyRoster, renderPartyRoster, openPartyEntry,

@@ -43,11 +43,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, LinkShopNpcRequest, RegenerateShopStaffRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest, GenerateFactionRequest, SaveFactionRequest, LinkFactionNpcRequest, RegenerateMemberRequest, set_validation_limits
+from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, LinkShopNpcRequest, RegenerateShopStaffRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest, GenerateFactionRequest, SaveFactionRequest, LinkFactionNpcRequest, RegenerateMemberRequest, Monster, GenerateBestiaryRequest, SaveBestiaryRequest, set_validation_limits
 from character_generator import generate_character
 from item_generator import generate_item
 from shop_generator import generate_shop, generate_shop_staff
 from faction_generator import generate_faction, generate_faction_member
+from bestiary_generator import generate_bestiary
 from docmost_client import DocmostClient
 import history_store
 
@@ -668,11 +669,66 @@ async def regenerate_faction_member_endpoint(faction_id: str, req: RegenerateMem
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/generate-bestiary")
+async def api_generate_bestiary(req: GenerateBestiaryRequest):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
+    try:
+        monster, usage = await generate_bestiary(req)
+
+        ts = datetime.now(timezone.utc)
+        entry_id = history_store.make_entry_id(ts, monster.name)
+        entry = {
+            "id": entry_id,
+            "timestamp": ts.isoformat(),
+            "type": "Monster",
+            "name": monster.name,
+            "monster_type": monster.monster_type,
+            "size": monster.size,
+            "cr": monster.challenge_rating,
+            "alignment": monster.alignment,
+            "docmost_page_id": None,
+            "docmost_url": None,
+            "generation_params": req.model_dump(),
+            "token_usage": usage,
+            "monster": monster.model_dump(),
+        }
+        history_store.save_entry(entry)
+        _update_token_stats(usage)
+
+        return {"monster": monster, "usage": usage, "history_id": entry_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/save-bestiary")
+async def api_save_bestiary(req: SaveBestiaryRequest):
+    try:
+        page_id, docmost_url = await docmost.save_monster(
+            req.monster, existing_page_id=_existing_page_id(req.history_id)
+        )
+
+        if req.history_id:
+            try:
+                history_store.patch_entry(req.history_id, {
+                    "docmost_page_id": page_id,
+                    "docmost_url": docmost_url,
+                    "docmost_synced_at": datetime.now(timezone.utc).isoformat(),
+                    "docmost_out_of_sync": False,
+                })
+            except Exception:
+                pass
+
+        return {"success": True, "page_id": page_id, "docmost_url": docmost_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/history/{entry_id}/update")
 async def update_history_entry(entry_id: str, req: UpdateEntryRequest):
     try:
         entry = history_store.get_entry(entry_id)
-        obj_key = {"Character": "character", "Generic NPC": "character", "Player Character": "character", "Item": "item", "Shop": "shop", "Faction": "faction"}.get(entry.get("type", ""))
+        obj_key = {"Character": "character", "Generic NPC": "character", "Player Character": "character", "Item": "item", "Shop": "shop", "Faction": "faction", "Monster": "monster"}.get(entry.get("type", ""))
         if obj_key and obj_key in entry:
             entry[obj_key].update(req.updates)
         # Keep top-level metadata in sync with edited fields
@@ -692,6 +748,12 @@ async def update_history_entry(entry_id: str, req: UpdateEntryRequest):
             for k in ("faction_type", "size", "alignment"):
                 if k in req.updates:
                     entry[k] = req.updates[k]
+        if obj_key == "monster":
+            for k in ("monster_type", "size", "alignment", "challenge_rating"):
+                if k in req.updates:
+                    entry[k] = req.updates[k]
+            if "challenge_rating" in req.updates:
+                entry["cr"] = req.updates["challenge_rating"]
         edited_at = datetime.now(timezone.utc).isoformat()
         entry["edited_at"] = edited_at
         out_of_sync = bool(entry.get("docmost_page_id"))

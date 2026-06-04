@@ -118,6 +118,7 @@
       <button id="navItems" onclick="switchView('items')" class="nav-btn"><i class="fa-solid fa-flask-vial mr-1"></i>Items</button>
       <button id="navShops" onclick="switchView('shops')" class="nav-btn"><i class="fa-solid fa-store mr-1"></i>Shops</button>
       <button id="navFactions" onclick="switchView('factions')" class="nav-btn"><i class="fa-solid fa-flag mr-1"></i>Factions</button>
+      <button id="navBestiary" onclick="switchView('bestiary')" class="nav-btn"><i class="fa-solid fa-dragon mr-1"></i>Bestiary</button>
       <button id="navPlayers" onclick="switchView('players')" class="nav-btn"><i class="fa-solid fa-shield-halved mr-1"></i>Players</button>
       <button id="navHistory" onclick="switchView('history')" class="nav-btn"><i class="fa-solid fa-scroll mr-1"></i>History</button>
       <button id="navSettings" onclick="switchView('settings')" class="nav-btn"><i class="fa-solid fa-gear mr-1"></i>Settings</button>
@@ -705,6 +706,160 @@
     </main>
 
   </div><!-- /viewFactions -->
+
+  <!-- Bestiary View -->
+  <div id="viewBestiary" class="hidden flex h-[calc(100vh-73px)]">
+
+    <!-- Left panel: form -->
+    <aside class="w-80 flex-shrink-0 border-r border-border overflow-y-auto p-4 space-y-4">
+      <div class="section-header"><i class="fa-solid fa-dragon mr-1"></i>Bestiary Generator</div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Concept / Theme <span class="text-gray-600">(optional)</span></label>
+          <textarea id="bestiaryConcept" rows="3" placeholder="e.g. A serpentine dragon that lurks in volcanic tunnels and feeds on molten rock…" class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-bestiaryConcept" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 1000</span>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Type</label>
+          <select id="bestiaryType" class="input-field text-sm">
+            <option value="Aberration">Aberration</option>
+            <option value="Beast" selected>Beast</option>
+            <option value="Celestial">Celestial</option>
+            <option value="Construct">Construct</option>
+            <option value="Dragon">Dragon</option>
+            <option value="Elemental">Elemental</option>
+            <option value="Fey">Fey</option>
+            <option value="Fiend">Fiend</option>
+            <option value="Giant">Giant</option>
+            <option value="Humanoid">Humanoid</option>
+            <option value="Monstrosity">Monstrosity</option>
+            <option value="Ooze">Ooze</option>
+            <option value="Plant">Plant</option>
+            <option value="Undead">Undead</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Size</label>
+            <select id="bestiarySize" class="input-field text-sm">
+              <option value="Tiny">Tiny</option>
+              <option value="Small">Small</option>
+              <option value="Medium" selected>Medium</option>
+              <option value="Large">Large</option>
+              <option value="Huge">Huge</option>
+              <option value="Gargantuan">Gargantuan</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Challenge Rating</label>
+            <select id="bestiaryCR" class="input-field text-sm">
+              <option value="0">0</option>
+              <option value="1/8">1/8</option>
+              <option value="1/4">1/4</option>
+              <option value="1/2">1/2</option>
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+              <option value="11">11</option>
+              <option value="12">12</option>
+              <option value="13">13</option>
+              <option value="14">14</option>
+              <option value="15">15</option>
+              <option value="16">16</option>
+              <option value="17">17</option>
+              <option value="18">18</option>
+              <option value="19">19</option>
+              <option value="20">20</option>
+              <option value="21">21</option>
+              <option value="22">22</option>
+              <option value="23">23</option>
+              <option value="24">24</option>
+              <option value="25">25</option>
+              <option value="26">26</option>
+              <option value="27">27</option>
+              <option value="28">28</option>
+              <option value="29">29</option>
+              <option value="30">30</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Alignment</label>
+          <select id="bestiaryAlignment" class="input-field text-sm">
+            <option>Lawful Good</option>
+            <option>Neutral Good</option>
+            <option>Chaotic Good</option>
+            <option>Lawful Neutral</option>
+            <option>True Neutral</option>
+            <option>Chaotic Neutral</option>
+            <option>Lawful Evil</option>
+            <option>Neutral Evil</option>
+            <option>Chaotic Evil</option>
+            <option selected>Unaligned</option>
+            <option>Any</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Environment <span class="text-gray-600">(optional)</span></label>
+          <input id="bestiaryEnvironment" type="text" placeholder="e.g. Underdark, deep ocean, volcanic mountains…" class="input-field text-sm" />
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Additional Notes <span class="text-gray-600">(optional)</span></label>
+          <textarea id="bestiaryNotes" rows="2" placeholder="e.g. Inspired by the ankheg, can spit acid, hunts in packs…" class="input-field resize-none text-sm"></textarea>
+          <span id="cnt-bestiaryNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
+        </div>
+
+        <button id="generateBestiaryBtn" onclick="generateBestiary()" class="btn-primary w-full flex items-center justify-center gap-2">
+          <svg id="generateBestiarySpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span id="generateBestiaryBtnText">Generate Monster</span>
+        </button>
+        <div id="bestiaryTokenUsage" class="hidden flex items-center justify-center gap-1.5 text-xs text-gray-500 pt-1"></div>
+      </div>
+
+      <!-- Save section (shown after generation) -->
+      <div id="bestiarySaveSection" class="hidden space-y-2 pt-2 border-t border-border">
+        <div class="section-header">Save to Docmost</div>
+        <p class="text-xs text-gray-500">Filed under <span class="text-gold">Bestiary → [Type]</span></p>
+        <button onclick="saveBestiary()" id="saveBestiaryBtn" class="btn-secondary w-full flex items-center justify-center gap-2">
+          <svg id="saveBestiarySpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span id="saveBestiaryBtnText">Save to Docmost</span>
+        </button>
+        <div id="bestiarySaveResult" class="hidden text-xs text-center py-1"></div>
+      </div>
+    </aside>
+
+    <!-- Right panel: stat block result -->
+    <main class="flex-1 overflow-y-auto p-6">
+      <div id="bestiaryPlaceholder" class="h-full flex items-center justify-center text-gray-600">
+        <div class="text-center">
+          <div class="text-6xl mb-4"><i class="fa-solid fa-dragon"></i></div>
+          <p class="text-lg">Fill in the form and generate a monster</p>
+          <p class="text-sm mt-1">The stat block will appear here</p>
+        </div>
+      </div>
+      <div id="bestiaryResultContainer" class="hidden space-y-4"></div>
+    </main>
+
+  </div><!-- /viewBestiary -->
 
   <!-- Players View -->
   <div id="viewPlayers" class="hidden flex h-[calc(100vh-73px)]">

@@ -75,6 +75,7 @@ export function _typeColor(type) {
     'Item':             '#a335ee',
     'Shop':             '#2e86ab',
     'Faction':          '#e07b39',
+    'Monster':          '#8b2020',
   };
   return map[type] || '#8a7560';
 }
@@ -89,6 +90,9 @@ export function _entrySubtitle(entry) {
   }
   if (entry.type === 'Faction') {
     return `${entry.faction_type} · ${entry.size} · ${entry.alignment}`;
+  }
+  if (entry.type === 'Monster') {
+    return `CR ${entry.cr} · ${entry.size} ${entry.monster_type}`;
   }
   return `${entry.character_class} · ${entry.race} · Lvl ${entry.level}`;
 }

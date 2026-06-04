@@ -503,6 +503,115 @@ class RegenerateMemberRequest(BaseModel):
     member_index: Optional[int] = None  # None = add new notable member
 
 
+# ---------------------------------------------------------------------------
+# Bestiary models
+# ---------------------------------------------------------------------------
+
+class MonsterSpeed(BaseModel):
+    walk: int = 30
+    fly: int = 0
+    swim: int = 0
+    burrow: int = 0
+    climb: int = 0
+    hover: bool = False
+
+
+class MonsterAbilityScore(BaseModel):
+    score: int
+    modifier: int
+
+
+class MonsterAbilityScores(BaseModel):
+    strength: MonsterAbilityScore
+    dexterity: MonsterAbilityScore
+    constitution: MonsterAbilityScore
+    intelligence: MonsterAbilityScore
+    wisdom: MonsterAbilityScore
+    charisma: MonsterAbilityScore
+
+
+class MonsterTrait(BaseModel):
+    name: str
+    description: str
+
+
+class MonsterAction(BaseModel):
+    name: str
+    description: str
+
+
+class LegendaryAction(BaseModel):
+    name: str
+    cost: int = 1
+    description: str
+
+
+class Monster(BaseModel):
+    name: str
+    size: str
+    monster_type: str
+    subtype: str = ""
+    alignment: str
+    armor_class: int
+    armor_type: str = ""
+    hit_points: int
+    hit_dice: str
+    speed: MonsterSpeed
+    ability_scores: MonsterAbilityScores
+    proficiency_bonus: int
+    saving_throws: dict = {}
+    skills: dict = {}
+    damage_vulnerabilities: list[str] = []
+    damage_resistances: list[str] = []
+    damage_immunities: list[str] = []
+    condition_immunities: list[str] = []
+    senses: list[str] = []
+    passive_perception: int
+    languages: list[str] = []
+    challenge_rating: str
+    xp: int
+    special_traits: list[MonsterTrait] = []
+    actions: list[MonsterAction] = []
+    bonus_actions: list[MonsterTrait] = []
+    reactions: list[MonsterTrait] = []
+    legendary_actions: list[LegendaryAction] = []
+    legendary_resistance_count: int = 0
+    lair_actions: list[MonsterTrait] = []
+    description: str = ""
+    ecology: str = ""
+    tactics: str = ""
+    lore: str = ""
+
+
+class GenerateBestiaryRequest(BaseModel):
+    concept: str = ""
+    monster_type: str = "Beast"
+    size: str = "Medium"
+    cr: str = "1"
+    alignment: str = "Unaligned"
+    environment: str = ""
+    additional_notes: str = ""
+
+    @field_validator('concept', 'environment')
+    @classmethod
+    def _check_concept_length(cls, v: str) -> str:
+        if len(v) > _limits['max_concept_length']:
+            raise ValueError(f'Must be at most {_limits["max_concept_length"]} characters ({len(v)} given)')
+        return v
+
+    @field_validator('additional_notes')
+    @classmethod
+    def _check_notes_length(cls, v: str) -> str:
+        if len(v) > _limits['max_notes_length']:
+            raise ValueError(f'Must be at most {_limits["max_notes_length"]} characters ({len(v)} given)')
+        return v
+
+
+class SaveBestiaryRequest(BaseModel):
+    monster: Monster
+    history_id: Optional[str] = None
+
+
 class SettingsUpdate(BaseModel):
     campaign_name: str = ""
     anthropic_api_key: str = ""

@@ -6,6 +6,7 @@ import { renderSheet, _buildCharacterEditForm, _collectCharacterEdits } from './
 import { renderItemSheet, _buildItemEditForm, _collectItemEdits } from './items.js';
 import { renderShopSheet, _renderShopContent, _buildShopEditForm, _collectShopEdits } from './shop.js';
 import { renderFactionSheet, _buildFactionEditForm, _collectFactionEdits } from './faction.js';
+import { renderBestiarySheet, _buildBestiaryEditForm, _collectBestiaryEdits } from './bestiary.js';
 
 export async function loadHistoryList() {
   document.getElementById('historyEntriesList').innerHTML =
@@ -149,12 +150,14 @@ export async function openHistoryEntry(entryId) {
     const isItem = entry.type === 'Item';
     const isShop = entry.type === 'Shop';
     const isFaction = entry.type === 'Faction';
+    const isMonster = entry.type === 'Monster';
 
     if (isItem) {
       state.currentItem = entry.item;
       state.currentCharacter = null;
       state.currentShop = null;
       state.currentFaction = null;
+      state.currentMonster = null;
     } else if (isShop) {
       state.currentShop = entry.shop;
       state.currentShopSynced = !!entry.docmost_page_id;
@@ -162,6 +165,7 @@ export async function openHistoryEntry(entryId) {
       state.currentItem = null;
       state.currentCharacter = null;
       state.currentFaction = null;
+      state.currentMonster = null;
     } else if (isFaction) {
       state.currentFaction = entry.faction;
       state.currentFactionSynced = !!entry.docmost_page_id;
@@ -169,11 +173,22 @@ export async function openHistoryEntry(entryId) {
       state.currentItem = null;
       state.currentCharacter = null;
       state.currentShop = null;
+      state.currentMonster = null;
+    } else if (isMonster) {
+      state.currentMonster = entry.monster;
+      state.currentMonsterHistoryId = entry.id;
+      state.currentMonsterSynced = !!entry.docmost_page_id;
+      state.currentMonsterDocmostUrl = entry.docmost_url || null;
+      state.currentItem = null;
+      state.currentCharacter = null;
+      state.currentShop = null;
+      state.currentFaction = null;
     } else {
       state.currentCharacter = entry.character;
       state.currentItem = null;
       state.currentShop = null;
       state.currentFaction = null;
+      state.currentMonster = null;
     }
 
     // Meta line
@@ -185,14 +200,16 @@ export async function openHistoryEntry(entryId) {
       metaHtml += `<span class="ml-2">${entry.category} ${entry.shop_type} · ${entry.item_count} items</span>`;
     } else if (isFaction) {
       metaHtml += `<span class="ml-2">${entry.faction_type} · ${entry.size} · ${entry.alignment}</span>`;
+    } else if (isMonster) {
+      metaHtml += `<span class="ml-2">CR ${entry.cr} · ${entry.size} ${entry.monster_type} · ${entry.alignment}</span>`;
     } else {
       metaHtml += `<span class="ml-2">${entry.character_class} · ${entry.race} · Level ${entry.level} · ${entry.alignment}</span>`;
     }
     metaHtml += `<span class="ml-2 text-gray-600">Generated ${_formatTimestamp(entry.timestamp)}</span>`;
     document.getElementById('historyEntryMeta').innerHTML = metaHtml;
 
-    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isItem || isShop || isFaction);
-    document.getElementById('historySaveFolder').classList.toggle('hidden', isItem || isShop || isFaction);
+    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isItem || isShop || isFaction || isMonster);
+    document.getElementById('historySaveFolder').classList.toggle('hidden', isItem || isShop || isFaction || isMonster);
 
     const link = document.getElementById('historyDocmostLink');
     if (entry.docmost_url) {
@@ -215,6 +232,8 @@ export async function openHistoryEntry(entryId) {
       renderItemSheet(entry.item, historySheet);
     } else if (isShop) {
       _renderShopContent(entry.shop, historySheet, state.currentShopSynced, entry.linked_npcs || []);
+    } else if (isMonster) {
+      renderBestiarySheet(entry.monster, historySheet, state.currentMonsterSynced);
     } else {
       renderSheet(entry.character, historySheet);
     }
@@ -227,7 +246,8 @@ export async function saveFromHistory() {
   const isItem = state.selectedHistoryEntryType === 'Item';
   const isShop = state.selectedHistoryEntryType === 'Shop';
   const isFaction = state.selectedHistoryEntryType === 'Faction';
-  const current = isItem ? state.currentItem : isShop ? state.currentShop : isFaction ? state.currentFaction : state.currentCharacter;
+  const isMonster = state.selectedHistoryEntryType === 'Monster';
+  const current = isItem ? state.currentItem : isShop ? state.currentShop : isFaction ? state.currentFaction : isMonster ? state.currentMonster : state.currentCharacter;
   if (!current) return;
 
   setBusy('historySaveBtn', 'historySaveSpinner', 'historySaveBtnText', true, 'Saving…');
@@ -245,6 +265,9 @@ export async function saveFromHistory() {
     } else if (isFaction) {
       endpoint = '/api/save-faction';
       body = { faction: state.currentFaction, history_id: state.currentHistoryId };
+    } else if (isMonster) {
+      endpoint = '/api/save-bestiary';
+      body = { monster: state.currentMonster, history_id: state.currentHistoryId };
     } else {
       endpoint = '/api/save';
       body = { character: state.currentCharacter, folder: document.getElementById('historySaveFolder').value, history_id: state.currentHistoryId };
@@ -281,6 +304,12 @@ export async function saveFromHistory() {
       const historySheet = document.getElementById('historySheet');
       historySheet.innerHTML = '';
       renderFactionSheet(state.currentFaction, historySheet, true, entry?.linked_npcs || []);
+    } else if (isMonster) {
+      state.currentMonsterSynced = true;
+      state.currentMonsterDocmostUrl = data.docmost_url || null;
+      const historySheet = document.getElementById('historySheet');
+      historySheet.innerHTML = '';
+      renderBestiarySheet(state.currentMonster, historySheet, true);
     }
 
     if (data.docmost_url) {
@@ -354,6 +383,8 @@ export function enterEditMode() {
     sheet.appendChild(_buildShopEditForm(state.currentShop));
   } else if (state.selectedHistoryEntryType === 'Faction') {
     sheet.appendChild(_buildFactionEditForm(state.currentFaction));
+  } else if (state.selectedHistoryEntryType === 'Monster') {
+    sheet.appendChild(_buildBestiaryEditForm(state.currentMonster));
   } else {
     sheet.appendChild(_buildCharacterEditForm(state.currentCharacter));
   }
@@ -372,6 +403,9 @@ export function exitEditMode(reRender = true) {
       const fEntry = state.historyEntries.find(e => e.id === state.currentHistoryId);
       renderFactionSheet(state.currentFaction, sheet, state.currentFactionSynced, fEntry?.linked_npcs || []);
     }
+    else if (state.selectedHistoryEntryType === 'Monster') {
+      renderBestiarySheet(state.currentMonster, sheet, state.currentMonsterSynced);
+    }
     else renderSheet(state.currentCharacter, sheet);
   }
 
@@ -384,6 +418,7 @@ export async function saveEdit() {
   if (state.selectedHistoryEntryType === 'Item') updates = _collectItemEdits();
   else if (state.selectedHistoryEntryType === 'Shop') updates = _collectShopEdits();
   else if (state.selectedHistoryEntryType === 'Faction') updates = _collectFactionEdits();
+  else if (state.selectedHistoryEntryType === 'Monster') updates = _collectBestiaryEdits();
   else updates = _collectCharacterEdits();
 
   const btn = document.getElementById('historyEditSaveBtn');
@@ -402,6 +437,7 @@ export async function saveEdit() {
     if (state.selectedHistoryEntryType === 'Item') state.currentItem = { ...state.currentItem, ...updates };
     else if (state.selectedHistoryEntryType === 'Shop') state.currentShop = { ...state.currentShop, ...updates };
     else if (state.selectedHistoryEntryType === 'Faction') state.currentFaction = { ...state.currentFaction, ...updates };
+    else if (state.selectedHistoryEntryType === 'Monster') state.currentMonster = { ...state.currentMonster, ...updates };
     else state.currentCharacter = { ...state.currentCharacter, ...updates };
 
     const entry = state.historyEntries.find(e => e.id === state.currentHistoryId);
@@ -415,6 +451,7 @@ export async function saveEdit() {
       if (updates.faction_type) entry.faction_type = updates.faction_type;
       if (updates.size) entry.size = updates.size;
       if (updates.alignment) entry.alignment = updates.alignment;
+      if (updates.monster_type) entry.monster_type = updates.monster_type;
       entry.edited_at = data.edited_at;
       if (data.out_of_sync) entry.docmost_out_of_sync = true;
     }
