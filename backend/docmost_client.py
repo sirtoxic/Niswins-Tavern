@@ -543,7 +543,7 @@ class DocmostClient:
         page_url = self._build_page_url(page_slug)
 
         entry = (
-            f"- **{char.name}** — "
+            f"- [**{char.name}**]({page_url}) — "
             f"{char.race} {char.character_class} Level {char.level}, {char.alignment}\n"
         )
         try:
@@ -721,7 +721,7 @@ class DocmostClient:
         page_url = self._build_page_url(page_slug)
 
         entry = (
-            f"- **{item.name}** — {item.rarity} · "
+            f"- [**{item.name}**]({page_url}) — {item.rarity} · "
             f"Levels {item.target_level_min}–{item.target_level_max}\n"
         )
         try:
@@ -760,7 +760,7 @@ class DocmostClient:
         page_url = self._build_page_url(page_slug)
 
         entry = (
-            f"- **{shop.name}** — {shop.category} {shop.shop_type}, "
+            f"- [**{shop.name}**]({page_url}) — {shop.category} {shop.shop_type}, "
             f"{len(shop.items)} items, run by {shop.shopkeeper.name}\n"
         )
         try:
@@ -864,7 +864,7 @@ class DocmostClient:
         page_url = self._build_page_url(page_slug)
 
         entry = (
-            f"- **{faction.name}** — {faction.size} {faction.faction_type}, "
+            f"- [**{faction.name}**]({page_url}) — {faction.size} {faction.faction_type}, "
             f"{faction.alignment}, led by {faction.leader.name}\n"
         )
         try:
@@ -1060,7 +1060,7 @@ class DocmostClient:
         page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
         page_url = self._build_page_url(page_slug)
 
-        entry = f"- **{monster.name}** — CR {monster.challenge_rating} {monster.size} {monster.monster_type}\n"
+        entry = f"- [**{monster.name}**]({page_url}) — CR {monster.challenge_rating} {monster.size} {monster.monster_type}\n"
         try:
             await self._append_to_page(type_folder_id, entry)
         except Exception as e:
