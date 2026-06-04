@@ -105,6 +105,61 @@ export function exportItemToPDF() {
   window.print();
 }
 
+export function exportItemToFoundryJSON(item) {
+  const it = item || state.currentItem;
+  if (!it) return;
+
+  const typeMap = {
+    'Weapon':'weapon', 'Armor':'equipment', 'Shield':'equipment',
+    'Wondrous Item':'equipment', 'Ring':'equipment', 'Rod':'equipment',
+    'Staff':'weapon', 'Wand':'equipment', 'Potion':'consumable',
+    'Scroll':'consumable', 'Ammunition':'consumable', 'Tool':'tool',
+    'Adventuring Gear':'loot',
+  };
+  const rarityMap = {
+    'Common':'common', 'Uncommon':'uncommon', 'Rare':'rare',
+    'Very Rare':'veryRare', 'Legendary':'legendary', 'Artifact':'artifact',
+  };
+
+  const descHtml = `<p>${it.description || ''}</p>` + (it.lore ? `<hr><p><em>${it.lore}</em></p>` : '');
+
+  const effects = (it.bonuses || []).map(b => ({
+    name: `+${b.value} ${b.stat}`,
+    icon: 'icons/svg/upgrade.svg',
+    changes: [{ key: `system.${b.stat}`, mode: 2, value: String(b.value), priority: 20 }],
+    disabled: false,
+    transfer: true,
+  }));
+
+  const foundryItem = {
+    name: it.name,
+    type: typeMap[it.item_type] || 'loot',
+    img: 'icons/svg/item-bag.svg',
+    system: {
+      description: { value: descHtml, chat: '' },
+      source: { custom: 'Niswins Tavern' },
+      quantity: 1,
+      weight: { value: it.weight_lbs || 0, units: 'lb' },
+      price: { value: it.value_gp || 0, denomination: 'gp' },
+      rarity: rarityMap[it.rarity] || 'uncommon',
+      attunement: it.requires_attunement ? 1 : 0,
+      equipped: false,
+      identified: true,
+      properties: [],
+    },
+    effects,
+    flags: { 'niswins-tavern': { generated: true, levelMin: it.target_level_min, levelMax: it.target_level_max } },
+  };
+
+  const blob = new Blob([JSON.stringify(foundryItem, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${it.name.replace(/[^a-z0-9]/gi, '_')}_foundry.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function renderItemSheet(item, containerEl) {
   const sheet = containerEl || document.getElementById('itemSheet');
   sheet.innerHTML = '';

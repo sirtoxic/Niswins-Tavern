@@ -440,6 +440,9 @@
         <button onclick="exportItemToPDF()" class="btn-secondary text-xs py-2 w-full flex items-center justify-center gap-1">
           <i class="fa-solid fa-file-pdf"></i> PDF
         </button>
+        <button onclick="exportItemToFoundryJSON()" class="btn-secondary text-xs py-2 w-full flex items-center justify-center gap-1">
+          <i class="fa-solid fa-dice-d20"></i> Foundry VTT
+        </button>
       </div>
     </aside>
 
@@ -844,6 +847,10 @@
           <span id="saveBestiaryBtnText">Save to Docmost</span>
         </button>
         <div id="bestiarySaveResult" class="hidden text-xs text-center py-1"></div>
+        <div class="section-header mt-3">Export</div>
+        <button onclick="exportCurrentMonsterToFoundryJSON()" class="btn-secondary text-xs py-2 w-full flex items-center justify-center gap-1" id="bestiaryFoundryBtn">
+          <i class="fa-solid fa-dice-d20"></i> Foundry VTT
+        </button>
       </div>
     </aside>
 
@@ -1224,7 +1231,7 @@
             <div id="historyEntryMeta" class="text-xs text-gray-500 leading-relaxed"></div>
             <div id="historyViewButtons" class="flex flex-wrap gap-2 items-center">
               <button onclick="exportToPDF()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-file-pdf mr-1"></i>PDF</button>
-              <button id="historyFoundryBtn" onclick="exportToFoundryJSON()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-dice-d20 mr-1"></i>Foundry</button>
+              <button id="historyFoundryBtn" onclick="exportHistoryToFoundry()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-dice-d20 mr-1"></i>Foundry VTT</button>
               <a id="historyDocmostLink" class="hidden btn-secondary text-xs py-1.5 px-3" href="#" target="_blank" rel="noopener" style="text-decoration:none">View in Docmost →</a>
               <button onclick="enterEditMode()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-pen mr-1"></i>Edit</button>
             </div>

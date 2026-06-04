@@ -408,3 +408,148 @@ export function _collectBestiaryEdits() {
     lore:        document.getElementById('edit_monster_lore').value.trim(),
   };
 }
+
+// ---------------------------------------------------------------------------
+// VTT Export
+// ---------------------------------------------------------------------------
+
+export function exportMonsterToFoundryJSON(monster) {
+  if (!monster) return;
+
+  const sizeMap = { Tiny:'tiny', Small:'sm', Medium:'med', Large:'lg', Huge:'huge', Gargantuan:'grg' };
+  const typeMap = {
+    Aberration:'aberration', Beast:'beast', Celestial:'celestial', Construct:'construct',
+    Dragon:'dragon', Elemental:'elemental', Fey:'fey', Fiend:'fiend', Giant:'giant',
+    Humanoid:'humanoid', Monstrosity:'monstrosity', Ooze:'ooze', Plant:'plant', Undead:'undead',
+  };
+  const crFractions = { '1/8': 0.125, '1/4': 0.25, '1/2': 0.5 };
+  const crFloat = crFractions[monster.challenge_rating] ?? (parseFloat(monster.challenge_rating) || 0);
+
+  const abilityKeys = { strength:'str', dexterity:'dex', constitution:'con', intelligence:'int', wisdom:'wis', charisma:'cha' };
+  const abilities = {};
+  for (const [full, abbr] of Object.entries(abilityKeys)) {
+    const s = monster.ability_scores[full];
+    abilities[abbr] = { value: s.score };
+  }
+  const saveNameMap = { STR:'str', DEX:'dex', CON:'con', INT:'int', WIS:'wis', CHA:'cha',
+    Str:'str', Dex:'dex', Con:'con', Int:'int', Wis:'wis', Cha:'cha' };
+  for (const key of Object.keys(monster.saving_throws || {})) {
+    const abbr = saveNameMap[key];
+    if (abbr) abilities[abbr].proficient = 1;
+  }
+
+  const skillAbilityMap = {
+    acr:'dex', ani:'wis', arc:'int', ath:'str', dec:'cha', his:'int', ins:'wis', itm:'cha',
+    inv:'int', med:'wis', nat:'int', prc:'wis', prf:'cha', per:'cha', rel:'int', slt:'dex', ste:'dex', sur:'wis',
+  };
+  const skillNameToKey = {
+    'Acrobatics':'acr', 'Animal Handling':'ani', 'Arcana':'arc', 'Athletics':'ath',
+    'Deception':'dec', 'History':'his', 'Insight':'ins', 'Intimidation':'itm',
+    'Investigation':'inv', 'Medicine':'med', 'Nature':'nat', 'Perception':'prc',
+    'Performance':'prf', 'Persuasion':'per', 'Religion':'rel',
+    'Sleight of Hand':'slt', 'Stealth':'ste', 'Survival':'sur',
+  };
+  const skills = {};
+  for (const name of Object.keys(monster.skills || {})) {
+    const key = skillNameToKey[name];
+    if (key) skills[key] = { value: 1, ability: skillAbilityMap[key] };
+  }
+
+  const senses = { darkvision:0, blindsight:0, tremorsense:0, truesight:0, units:'ft', special:'' };
+  for (const s of (monster.senses || [])) {
+    for (const t of ['darkvision', 'blindsight', 'tremorsense', 'truesight']) {
+      if (s.toLowerCase().includes(t)) {
+        const m = s.match(/(\d+)/);
+        if (m) senses[t] = parseInt(m[1]);
+      }
+    }
+  }
+
+  const items = [];
+  const addFeat = (name, desc, activation, cost = 1) => items.push({
+    name, type: 'feat', img: 'icons/svg/upgrade.svg',
+    system: { description: { value: desc || '' }, activation: { type: activation, cost, condition: '' }, type: { value: 'monster', subtype: '' } },
+  });
+  for (const t of (monster.special_traits || []))   addFeat(t.name, t.description, 'passive', null);
+  for (const a of (monster.actions || []))           addFeat(a.name, a.description, 'action');
+  for (const b of (monster.bonus_actions || []))     addFeat(b.name, b.description, 'bonus');
+  for (const r of (monster.reactions || []))         addFeat(r.name, r.description, 'reaction');
+  for (const l of (monster.legendary_actions || [])) addFeat(l.name, l.description, 'legendary', l.cost || 1);
+
+  const bioHtml = [
+    monster.description && `<p>${monster.description}</p>`,
+    monster.ecology    && `<h2>Ecology</h2><p>${monster.ecology}</p>`,
+    monster.tactics    && `<h2>Tactics</h2><p>${monster.tactics}</p>`,
+    monster.lore       && `<h2>Lore</h2><p>${monster.lore}</p>`,
+  ].filter(Boolean).join('');
+
+  const dmgList = arr => ({
+    value: (arr || []).map(d => d.toLowerCase().split(' ')[0]).filter(Boolean),
+    bypasses: [], custom: '',
+  });
+
+  const spd = monster.speed || {};
+  const actor = {
+    name: monster.name,
+    type: 'npc',
+    img: 'icons/svg/mystery-man.svg',
+    system: {
+      abilities,
+      attributes: {
+        hp: { value: monster.hit_points, min: 0, max: monster.hit_points, temp: 0, tempmax: 0, formula: monster.hit_dice || '' },
+        ac: { flat: monster.armor_class, calc: 'flat', formula: '' },
+        init: { ability: 'dex', bonus: '' },
+        movement: { burrow: spd.burrow||0, climb: spd.climb||0, fly: spd.fly||0, swim: spd.swim||0, walk: spd.walk||30, hover: spd.hover||false, units: 'ft' },
+        senses,
+        prof: monster.proficiency_bonus || 2,
+        cr: crFloat,
+        death: { success: 0, failure: 0 },
+        exhaustion: 0,
+      },
+      details: {
+        biography: { value: bioHtml, public: '' },
+        alignment: (monster.alignment || '').toLowerCase(),
+        type: { value: typeMap[monster.monster_type] || monster.monster_type?.toLowerCase() || 'humanoid', subtype: monster.subtype || '', swarm: '', custom: '' },
+        cr: crFloat,
+        xp: { value: monster.xp || 0 },
+        source: { custom: 'Niswins Tavern' },
+        environment: '',
+      },
+      traits: {
+        size: sizeMap[monster.size] || 'med',
+        languages: { value: [], custom: (monster.languages || []).join(', ') },
+        di: dmgList(monster.damage_immunities),
+        dr: dmgList(monster.damage_resistances),
+        dv: dmgList(monster.damage_vulnerabilities),
+        ci: { value: (monster.condition_immunities || []).map(c => c.toLowerCase()), custom: '' },
+      },
+      skills,
+      resources: {
+        legact: { value: (monster.legendary_actions || []).length, max: (monster.legendary_actions || []).length },
+        legres: { value: monster.legendary_resistance_count || 0, max: monster.legendary_resistance_count || 0 },
+      },
+      bonuses: { mwak:{attack:'',damage:''}, rwak:{attack:'',damage:''}, msak:{attack:'',damage:''}, rsak:{attack:'',damage:''}, abilities:{check:'',save:'',skill:''}, spell:{dc:''} },
+      currency: { pp:0, gp:0, ep:0, sp:0, cp:0 },
+    },
+    items,
+    effects: [],
+    flags: { 'niswins-tavern': { generated: true, cr: monster.challenge_rating } },
+    prototypeToken: { name: monster.name, displayName: 20, actorLink: false, disposition: -1, displayBars: 20, bar1: { attribute: 'attributes.hp' } },
+  };
+
+  _downloadJSON(actor, monster.name);
+}
+
+export function exportCurrentMonsterToFoundryJSON() {
+  exportMonsterToFoundryJSON(state.currentMonster);
+}
+
+function _downloadJSON(data, name) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name.replace(/[^a-z0-9]/gi, '_')}_foundry.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}

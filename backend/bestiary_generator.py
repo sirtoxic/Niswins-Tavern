@@ -13,10 +13,8 @@
 from __future__ import annotations
 
 import json
-import os
-import anthropic
 from models import Monster, GenerateBestiaryRequest
-from character_generator import _get_model_pricing, MODEL
+from ai_client import call_claude
 
 _CR_XP = {
     "0": 10, "1/8": 25, "1/4": 50, "1/2": 100,
@@ -147,36 +145,11 @@ Notes:
 
 
 async def generate_bestiary(req: GenerateBestiaryRequest) -> tuple:
-    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
-    message = await client.messages.create(
-        model=MODEL,
-        max_tokens=4096,
-        system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": _build_prompt(req)}],
-    )
-
-    raw = message.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1]
-        raw = raw.rsplit("```", 1)[0]
+    raw, usage = await call_claude(_build_prompt(req), max_tokens=4096, system=_SYSTEM_PROMPT)
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
         raise ValueError(f"Claude returned malformed JSON: {e}\n\nRaw output:\n{raw[:500]}")
-
-    input_tokens = message.usage.input_tokens
-    output_tokens = message.usage.output_tokens
-    input_cost, output_cost = await _get_model_pricing(MODEL)
-    cost_usd = input_tokens * input_cost + output_tokens * output_cost
-
-    usage = {
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": input_tokens + output_tokens,
-        "cost_usd": round(cost_usd, 6),
-        "model": MODEL,
-    }
 
     return Monster(**data), usage

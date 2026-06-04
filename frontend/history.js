@@ -2,11 +2,11 @@
 
 import { setBusy, _escHtml, _formatTimestamp, _typeColor, _entrySubtitle, RARITY_COLORS } from './utils.js';
 import { state } from './state.js';
-import { renderSheet, _buildCharacterEditForm, _collectCharacterEdits } from './forge.js';
-import { renderItemSheet, _buildItemEditForm, _collectItemEdits } from './items.js';
+import { renderSheet, exportToFoundryJSON as _exportCharacterToFoundry, _buildCharacterEditForm, _collectCharacterEdits } from './forge.js';
+import { renderItemSheet, exportItemToFoundryJSON, _buildItemEditForm, _collectItemEdits } from './items.js';
 import { renderShopSheet, _renderShopContent, _buildShopEditForm, _collectShopEdits } from './shop.js';
 import { renderFactionSheet, _buildFactionEditForm, _collectFactionEdits } from './faction.js';
-import { renderBestiarySheet, _buildBestiaryEditForm, _collectBestiaryEdits } from './bestiary.js';
+import { renderBestiarySheet, exportMonsterToFoundryJSON, _buildBestiaryEditForm, _collectBestiaryEdits } from './bestiary.js';
 
 export async function loadHistoryList() {
   document.getElementById('historyEntriesList').innerHTML =
@@ -208,7 +208,7 @@ export async function openHistoryEntry(entryId) {
     metaHtml += `<span class="ml-2 text-gray-600">Generated ${_formatTimestamp(entry.timestamp)}</span>`;
     document.getElementById('historyEntryMeta').innerHTML = metaHtml;
 
-    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isItem || isShop || isFaction || isMonster);
+    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isShop || isFaction);
     document.getElementById('historySaveFolder').classList.toggle('hidden', isItem || isShop || isFaction || isMonster);
 
     const link = document.getElementById('historyDocmostLink');
@@ -463,5 +463,16 @@ export async function saveEdit() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i>Save Changes';
+  }
+}
+
+export function exportHistoryToFoundry() {
+  const type = state.selectedHistoryEntryType;
+  if (type === 'Monster' && state.currentMonster) {
+    exportMonsterToFoundryJSON(state.currentMonster);
+  } else if (type === 'Item' && state.currentItem) {
+    exportItemToFoundryJSON(state.currentItem);
+  } else if (state.currentCharacter) {
+    _exportCharacterToFoundry();
   }
 }

@@ -16,10 +16,8 @@
 from __future__ import annotations
 
 import json
-import os
-import anthropic
 from models import Shop, GenerateShopRequest, ShopStaff
-from character_generator import _get_model_pricing, MODEL
+from ai_client import call_claude
 
 _SYSTEM_PROMPT = """You are a D&D 5e worldbuilder specialising in creating vivid, memorable shops and merchants for tabletop RPGs. You produce detailed, flavourful content as structured JSON.
 
@@ -106,45 +104,18 @@ Generate exactly {req.item_count} items. Distribute rarities naturally across: {
 
 
 async def generate_shop(req: GenerateShopRequest) -> tuple:
-    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
-    message = await client.messages.create(
-        model=MODEL,
-        max_tokens=8192,
-        system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": _build_prompt(req)}],
-    )
-
-    raw = message.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1]
-        raw = raw.rsplit("```", 1)[0]
+    raw, usage = await call_claude(_build_prompt(req), max_tokens=8192, system=_SYSTEM_PROMPT)
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
         raise ValueError(f"Claude returned malformed JSON: {e}\n\nRaw output:\n{raw[:500]}")
 
-    input_tokens = message.usage.input_tokens
-    output_tokens = message.usage.output_tokens
-    input_cost, output_cost = await _get_model_pricing(MODEL)
-    cost_usd = input_tokens * input_cost + output_tokens * output_cost
-
-    usage = {
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": input_tokens + output_tokens,
-        "cost_usd": round(cost_usd, 6),
-        "model": MODEL,
-    }
-
     return Shop(**data), usage
 
 
 async def generate_shop_staff(shop: Shop, is_shopkeeper: bool = False) -> dict:
     """Generate a new shopkeeper or staff member for an existing shop. Returns raw dict."""
-    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
     overview_excerpt = shop.description[:400] if shop.description else ""
 
     if is_shopkeeper:
@@ -173,14 +144,5 @@ Description: {overview_excerpt}
 Return ONLY a JSON object matching this schema:
 {schema}"""
 
-    message = await client.messages.create(
-        model=MODEL,
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = message.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
-
+    raw, _ = await call_claude(prompt, max_tokens=512)
     return json.loads(raw)

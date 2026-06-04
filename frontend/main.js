@@ -441,7 +441,7 @@ import {
 } from './forge.js';
 
 import {
-  generateItem, saveItem, exportItemToPDF, renderItemSheet as _renderItemSheet,
+  generateItem, saveItem, exportItemToPDF, exportItemToFoundryJSON, renderItemSheet as _renderItemSheet,
   _buildItemEditForm, _collectItemEdits, _makeBonusRow, _makeAbilityRow,
 } from './items.js';
 
@@ -461,6 +461,7 @@ import {
 
 import {
   generateBestiary, saveBestiary, renderBestiarySheet,
+  exportMonsterToFoundryJSON, exportCurrentMonsterToFoundryJSON,
   _buildBestiaryEditForm, _collectBestiaryEdits,
 } from './bestiary.js';
 
@@ -475,7 +476,7 @@ import {
   loadHistoryList as _loadHistoryList, filterHistory, setHistoryTag, _buildTagFilters,
   renderHistoryList as _renderHistoryList, openHistoryEntry, saveFromHistory,
   _updateHistorySyncStatus, showResyncWarning, cancelResync, confirmResync,
-  enterEditMode, exitEditMode, saveEdit,
+  enterEditMode, exitEditMode, saveEdit, exportHistoryToFoundry,
 } from './history.js';
 
 import {
@@ -500,7 +501,7 @@ Object.assign(window, {
   _buildCharacterEditForm, _collectCharacterEdits,
 
   // items
-  generateItem, saveItem, exportItemToPDF, renderItemSheet: _renderItemSheet,
+  generateItem, saveItem, exportItemToPDF, exportItemToFoundryJSON, renderItemSheet: _renderItemSheet,
   _buildItemEditForm, _collectItemEdits, _makeBonusRow, _makeAbilityRow,
   updateRarityBadge,
 
@@ -519,6 +520,7 @@ Object.assign(window, {
 
   // bestiary
   generateBestiary, saveBestiary, renderBestiarySheet,
+  exportMonsterToFoundryJSON, exportCurrentMonsterToFoundryJSON,
   _buildBestiaryEditForm, _collectBestiaryEdits,
 
   // players
@@ -531,7 +533,7 @@ Object.assign(window, {
   loadHistoryList: _loadHistoryList, filterHistory, setHistoryTag, _buildTagFilters,
   renderHistoryList: _renderHistoryList, openHistoryEntry, saveFromHistory,
   _updateHistorySyncStatus, showResyncWarning, cancelResync, confirmResync,
-  enterEditMode, exitEditMode, saveEdit,
+  enterEditMode, exitEditMode, saveEdit, exportHistoryToFoundry,
 
   // settings
   loadTokenStats, loadSettings: _loadSettings, saveSettings, testPageUrl, toggleVisible,

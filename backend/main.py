@@ -45,6 +45,7 @@ from fastapi.responses import FileResponse
 
 from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, LinkShopNpcRequest, RegenerateShopStaffRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest, GenerateFactionRequest, SaveFactionRequest, LinkFactionNpcRequest, RegenerateMemberRequest, Monster, GenerateBestiaryRequest, SaveBestiaryRequest, set_validation_limits
 from character_generator import generate_character
+from ai_client import set_model
 from item_generator import generate_item
 from shop_generator import generate_shop, generate_shop_staff
 from faction_generator import generate_faction, generate_faction_member
@@ -141,9 +142,17 @@ def _load_validation_limits_from_config() -> None:
     set_validation_limits(cfg.get("validation", {}))
 
 
+def _load_model_from_config() -> None:
+    cfg = yaml.safe_load(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else {}
+    model = cfg.get("claude", {}).get("model", "claude-sonnet-4-6")
+    if model:
+        set_model(model)
+
+
 _ensure_config_files()
 _load_api_key_from_config()
 _load_validation_limits_from_config()
+_load_model_from_config()
 
 app = FastAPI(title="Niswins Tavern")
 docmost = DocmostClient()
@@ -237,6 +246,7 @@ async def update_settings(req: SettingsUpdate):
             },
         }
         cfg["claude"] = {"model": req.claude_model}
+        set_model(req.claude_model)
         cfg["campaign_name"] = req.campaign_name
 
         with open(CONFIG_PATH, "w") as f:

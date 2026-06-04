@@ -12,41 +12,8 @@
 #   - Cost and token usage returned with every generation for display in the UI.
 
 import json
-import os
-import httpx
-import anthropic
 from models import Character, GenerateRequest
-
-_LITELLM_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
-_pricing_cache: dict = {}
-
-# Known fallback in case the model isn't in the LiteLLM dataset yet
-_FALLBACK_INPUT_PER_TOKEN = 0.000003   # $3/MTok
-_FALLBACK_OUTPUT_PER_TOKEN = 0.000015  # $15/MTok
-
-
-async def _get_model_pricing(model: str) -> tuple[float, float]:
-    """Return (input_cost_per_token, output_cost_per_token) for the given model."""
-    global _pricing_cache
-    if not _pricing_cache:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                r = await client.get(_LITELLM_URL)
-                if r.status_code == 200:
-                    _pricing_cache = r.json()
-        except Exception:
-            pass
-
-    entry = (
-        _pricing_cache.get(model)
-        or _pricing_cache.get(f"anthropic/{model}")
-    )
-    if entry:
-        return (
-            entry.get("input_cost_per_token", _FALLBACK_INPUT_PER_TOKEN),
-            entry.get("output_cost_per_token", _FALLBACK_OUTPUT_PER_TOKEN),
-        )
-    return _FALLBACK_INPUT_PER_TOKEN, _FALLBACK_OUTPUT_PER_TOKEN
+from ai_client import call_claude, get_model, set_model
 
 ABILITY_NAMES = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
 ALL_SKILLS = [
@@ -259,27 +226,9 @@ For spellcasting classes, replace null with:
 }}"""
 
 
-MODEL = "claude-sonnet-4-6"
-
-
 async def generate_character(req: GenerateRequest) -> tuple:
-    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
     system = SYSTEM_PROMPT + (GENERIC_NPC_SYSTEM_ADDENDUM if req.generic_npc else "")
-
-    message = await client.messages.create(
-        model=MODEL,
-        max_tokens=16000,
-        system=system,
-        messages=[{"role": "user", "content": build_user_prompt(req)}],
-    )
-
-    raw = message.content[0].text.strip()
-
-    # Strip markdown code fences if Claude adds them despite instructions
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1]
-        raw = raw.rsplit("```", 1)[0]
+    raw, usage = await call_claude(build_user_prompt(req), max_tokens=16000, system=system)
 
     try:
         data = json.loads(raw)
@@ -288,18 +237,5 @@ async def generate_character(req: GenerateRequest) -> tuple:
             f"Claude returned malformed JSON (likely truncated). "
             f"Try using 'Short' backstory detail to reduce output size. Error: {e}"
         )
-
-    input_tokens = message.usage.input_tokens
-    output_tokens = message.usage.output_tokens
-    input_cost, output_cost = await _get_model_pricing(MODEL)
-    cost_usd = input_tokens * input_cost + output_tokens * output_cost
-
-    usage = {
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": input_tokens + output_tokens,
-        "cost_usd": round(cost_usd, 6),
-        "model": MODEL,
-    }
 
     return Character(**data), usage
