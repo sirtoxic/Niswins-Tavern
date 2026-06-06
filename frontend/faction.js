@@ -2,7 +2,7 @@
 // Note: openFactionMemberModal calls window.openGenModal() at runtime
 // to avoid circular imports with main.js.
 
-import { el, setBusy, _escHtml, _escAttr, _showTokenUsage, _editField, _editTextarea, _editSelect, _sectionLabel } from './utils.js';
+import { el, setBusy, toast, buildContextNote, getContextId, cacheHistoryEntry, _renderAssocLinks, _apiDetail, _escHtml, _escAttr, _showTokenUsage, _editField, _editTextarea, _editSelect, _sectionLabel } from './utils.js';
 import { state } from './state.js';
 
 export async function generateFaction() {
@@ -22,6 +22,7 @@ export async function generateFaction() {
       reputation:       document.getElementById('factionReputation').value,
       region:           document.getElementById('factionRegion').value.trim(),
       additional_notes: document.getElementById('factionNotes').value.trim(),
+      parent_context_id: getContextId('factionAssocSelect'),
     };
 
     const r = await fetch('/api/generate-faction', {
@@ -32,20 +33,22 @@ export async function generateFaction() {
 
     if (!r.ok) {
       const err = await r.json();
-      throw new Error(err.detail || 'Generation failed');
+      throw new Error(_apiDetail(err.detail, 'Generation failed'));
     }
 
     const data = await r.json();
     state.currentFaction = data.faction;
     state.currentFactionHistoryId = data.history_id ?? null;
+    cacheHistoryEntry({ id: data.history_id, type: 'Faction', name: data.faction.name, faction_type: data.faction.faction_type, size: data.faction.size, alignment: data.faction.alignment, faction: { overview: data.faction.overview }, timestamp: new Date().toISOString() });
 
     document.getElementById('factionPlaceholder').classList.add('hidden');
     document.getElementById('factionSheet').classList.remove('hidden');
     renderFactionSheet(state.currentFaction, document.getElementById('factionSheet'));
     document.getElementById('factionSaveSection').classList.remove('hidden');
+    _renderAssocLinks('factionAssocLinks', data.history_id, 'factionAssocSelect');
     _showTokenUsage(data.usage, 'factionTokenUsage');
   } catch (e) {
-    alert(`Error: ${e.message}`);
+    toast(`Error: ${e.message}`, 'error');
   } finally {
     setBusy('generateFactionBtn', 'generateFactionSpinner', 'generateFactionBtnText', false, 'Generate Faction');
   }
@@ -54,8 +57,6 @@ export async function generateFaction() {
 export async function saveFaction() {
   if (!state.currentFaction) return;
   setBusy('saveFactionBtn', 'saveFactionSpinner', 'saveFactionBtnText', true, 'Saving…');
-  const resultEl = document.getElementById('saveFactionResult');
-  resultEl.classList.add('hidden');
 
   try {
     const r = await fetch('/api/save-faction', {
@@ -74,14 +75,9 @@ export async function saveFaction() {
     state.currentFactionSynced = true;
     state.currentFactionDocmostUrl = data.docmost_url || null;
     renderFactionSheet(state.currentFaction, document.getElementById('factionSheet'), true, []);
-
-    resultEl.textContent = `✓ Saved to Factions / ${state.currentFaction.faction_type}`;
-    resultEl.className = 'text-xs text-center py-1 text-green-400';
-    resultEl.classList.remove('hidden');
+    toast(`Saved to Factions / ${state.currentFaction.faction_type}`);
   } catch (e) {
-    resultEl.textContent = `✗ ${e.message}`;
-    resultEl.className = 'text-xs text-center py-1 text-red-400';
-    resultEl.classList.remove('hidden');
+    toast(e.message, 'error');
   } finally {
     setBusy('saveFactionBtn', 'saveFactionSpinner', 'saveFactionBtnText', false, 'Save to Docmost');
   }
@@ -322,7 +318,7 @@ export async function regenerateFactionMemberUI(isLeader, memberIndex) {
 
     await _saveFactionMemberChanges();
   } catch (e) {
-    alert(`Regenerate failed: ${e.message}`);
+    toast(`Regenerate failed: ${e.message}`, 'error');
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate-right mr-1"></i>Regenerate'; }
   }
 }
@@ -347,7 +343,7 @@ export async function addFactionMemberUI() {
     state.currentFaction = { ...state.currentFaction, notable_members: members };
     await _saveFactionMemberChanges();
   } catch (e) {
-    alert(`Add member failed: ${e.message}`);
+    toast(`Add member failed: ${e.message}`, 'error');
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-plus mr-1"></i>Add Member (Generate via Claude)'; }
   }
 }

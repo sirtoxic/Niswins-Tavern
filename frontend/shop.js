@@ -2,7 +2,7 @@
 // Note: openShopkeeperModal and openShopStaffModal call window.openGenModal()
 // at runtime to avoid circular imports with main.js.
 
-import { el, setBusy, _escHtml, _escAttr, _showTokenUsage, RARITY_COLORS, _editField, _editTextarea, _editSelect, _sectionLabel } from './utils.js';
+import { el, setBusy, toast, buildContextNote, getContextId, cacheHistoryEntry, _renderAssocLinks, _apiDetail, _escHtml, _escAttr, _showTokenUsage, RARITY_COLORS, _editField, _editTextarea, _editSelect, _sectionLabel } from './utils.js';
 import { state } from './state.js';
 
 export function _shopRarityStyle(rarity, active) {
@@ -55,6 +55,7 @@ export async function generateShop() {
       rarities: [...state.shopSelectedRarities],
       detail_level: state.shopDetailLevel,
       additional_notes: document.getElementById('shopNotes').value.trim(),
+      parent_context_id: getContextId('shopAssocSelect'),
     };
 
     const r = await fetch('/api/generate-shop', {
@@ -65,7 +66,7 @@ export async function generateShop() {
 
     if (!r.ok) {
       const err = await r.json();
-      throw new Error(err.detail || 'Generation failed');
+      throw new Error(_apiDetail(err.detail, 'Generation failed'));
     }
 
     const data = await r.json();
@@ -73,13 +74,15 @@ export async function generateShop() {
     state.currentShopHistoryId = data.history_id ?? null;
     state.currentShopSynced = false;
     state.currentShopDocmostUrl = null;
+    cacheHistoryEntry({ id: data.history_id, type: 'Shop', name: data.shop.name, category: data.shop.category, shop_type: data.shop.shop_type, item_count: data.shop.items?.length ?? 0, shop: { atmosphere: data.shop.atmosphere }, timestamp: new Date().toISOString() });
 
     document.getElementById('shopPlaceholder').classList.add('hidden');
     document.getElementById('shopSheet').classList.remove('hidden');
     renderShopSheet(state.currentShop, false, []);
+    _renderAssocLinks('shopAssocLinks', data.history_id, 'shopAssocSelect');
     _showTokenUsage(data.usage, 'shopTokenUsage');
   } catch (e) {
-    alert(`Error: ${e.message}`);
+    toast(`Error: ${e.message}`, 'error');
   } finally {
     setBusy('generateShopBtn', 'generateShopSpinner', 'generateShopBtnText', false, 'Generate Shop');
   }
@@ -101,8 +104,6 @@ export function renderShopSheet(shop, isSynced = false, linkedNpcs = []) {
 export async function saveShop() {
   if (!state.currentShop) return;
   setBusy('saveShopBtn', 'saveShopSpinner', 'saveShopBtnText', true, 'Saving…');
-  const resultEl = document.getElementById('shopSaveResult');
-  resultEl.classList.add('hidden');
 
   try {
     const r = await fetch('/api/save-shop', {
@@ -122,10 +123,7 @@ export async function saveShop() {
     state.currentShopSynced = true;
     state.currentShopDocmostUrl = data.docmost_url || null;
     renderShopSheet(state.currentShop, true, entry?.linked_npcs || []);
-
-    resultEl.textContent = `✓ Saved to Locations / Shops`;
-    resultEl.className = 'text-xs text-center py-1 text-green-400';
-    resultEl.classList.remove('hidden');
+    toast('Saved to Locations / Shops');
 
     const link = document.getElementById('shopDocmostLink');
     if (data.docmost_url) {
@@ -133,9 +131,7 @@ export async function saveShop() {
       link.classList.remove('hidden');
     }
   } catch (e) {
-    resultEl.textContent = `✗ ${e.message}`;
-    resultEl.className = 'text-xs text-center py-1 text-red-400';
-    resultEl.classList.remove('hidden');
+    toast(e.message, 'error');
   } finally {
     setBusy('saveShopBtn', 'saveShopSpinner', 'saveShopBtnText', false, 'Save to Docmost');
   }
@@ -347,7 +343,7 @@ export async function regenerateShopkeeperUI() {
     state.currentShop.shopkeeper = { ...state.currentShop.shopkeeper, ...data.member };
     await _saveShopStaffChanges(shopId);
   } catch (e) {
-    alert(`Regenerate failed: ${e.message}`);
+    toast(`Regenerate failed: ${e.message}`, 'error');
   }
 }
 
@@ -365,7 +361,7 @@ export async function regenerateShopStaffUI(staffIndex) {
     state.currentShop.staff[staffIndex] = data.member;
     await _saveShopStaffChanges(shopId);
   } catch (e) {
-    alert(`Regenerate failed: ${e.message}`);
+    toast(`Regenerate failed: ${e.message}`, 'error');
   }
 }
 
@@ -384,7 +380,7 @@ export async function addShopStaffUI() {
     state.currentShop.staff.push(data.member);
     await _saveShopStaffChanges(shopId);
   } catch (e) {
-    alert(`Add staff failed: ${e.message}`);
+    toast(`Add staff failed: ${e.message}`, 'error');
   }
 }
 
@@ -419,7 +415,7 @@ export async function _saveShopStaffChanges(shopId) {
       }
     }
   } catch (e) {
-    alert(`Save failed: ${e.message}`);
+    toast(`Save failed: ${e.message}`, 'error');
   }
 }
 

@@ -1,6 +1,6 @@
 // main.js — routing, modal, config, initialization
 
-import { RARITY_COLORS, setBusy, _showTokenUsage } from './utils.js';
+import { RARITY_COLORS, setBusy, toast, _showTokenUsage } from './utils.js';
 import { state } from './state.js';
 
 import { rollForgeStats, rollPcStats } from './stats.js';
@@ -17,12 +17,12 @@ import { loadSettings } from './settings.js';
 
 export const VIEW_HASHES = {
   forge: '#npcs', items: '#items', shops: '#shops', factions: '#factions',
-  bestiary: '#bestiary',
+  bestiary: '#bestiary', locations: '#locations',
   players: '#players', history: '#history', settings: '#settings',
 };
 export const HASH_VIEWS = {
   '#npcs': 'forge', '#items': 'items', '#shops': 'shops', '#factions': 'factions',
-  '#bestiary': 'bestiary',
+  '#bestiary': 'bestiary', '#locations': 'locations',
   '#players': 'players', '#history': 'history', '#settings': 'settings',
 };
 
@@ -88,6 +88,7 @@ export function switchView(view, updateHash = true) {
   document.getElementById('viewShops').classList.toggle('hidden', view !== 'shops');
   document.getElementById('viewFactions').classList.toggle('hidden', view !== 'factions');
   document.getElementById('viewBestiary').classList.toggle('hidden', view !== 'bestiary');
+  document.getElementById('viewLocations').classList.toggle('hidden', view !== 'locations');
   document.getElementById('viewPlayers').classList.toggle('hidden', view !== 'players');
   document.getElementById('viewHistory').classList.toggle('hidden', view !== 'history');
   document.getElementById('viewSettings').classList.toggle('hidden', view !== 'settings');
@@ -96,6 +97,7 @@ export function switchView(view, updateHash = true) {
   document.getElementById('navShops').classList.toggle('nav-active', view === 'shops');
   document.getElementById('navFactions').classList.toggle('nav-active', view === 'factions');
   document.getElementById('navBestiary').classList.toggle('nav-active', view === 'bestiary');
+  document.getElementById('navLocations').classList.toggle('nav-active', view === 'locations');
   document.getElementById('navPlayers').classList.toggle('nav-active', view === 'players');
   document.getElementById('navHistory').classList.toggle('nav-active', view === 'history');
   document.getElementById('navSettings').classList.toggle('nav-active', view === 'settings');
@@ -163,10 +165,17 @@ export async function runModalGeneration() {
   const btnText = document.getElementById('genModalGenerateBtnText');
   genBtn.disabled = true;
   spinner.classList.remove('hidden');
-  btnText.textContent = 'Generating…';
+  const _modalLabel = 'Generating…';
+  btnText.textContent = _modalLabel;
   document.getElementById('genModalSaveBtn').classList.add('hidden');
   document.getElementById('genModalSaveResult').textContent = '';
   document.getElementById('genModalTokenUsage').classList.add('hidden');
+
+  const _modalStart = Date.now();
+  const _modalTimer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - _modalStart) / 1000);
+    btnText.textContent = `${_modalLabel} ${elapsed}s`;
+  }, 1000);
 
   const resultEl = document.getElementById('genModalResult');
   resultEl.innerHTML = '';
@@ -175,7 +184,7 @@ export async function runModalGeneration() {
     if (state._modalMode === 'item') {
       const concept = document.getElementById('genModalItemConcept').value.trim();
       const itemType = document.getElementById('genModalItemType').value.trim();
-      if (!concept || !itemType) { alert('Concept and Item Type are required.'); return; }
+      if (!concept || !itemType) { toast('Concept and Item Type are required.', 'error'); return; }
 
       const body = {
         concept,
@@ -192,7 +201,7 @@ export async function runModalGeneration() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Generation failed'); }
+      if (!r.ok) { const e = await r.json(); throw new Error(_apiDetail(e.detail, 'Generation failed')); }
       const data = await r.json();
       state._modalGeneratedItem = data.item;
       state._modalGeneratedItemHistoryId = data.history_id ?? null;
@@ -205,7 +214,7 @@ export async function runModalGeneration() {
     } else {
       const concept = document.getElementById('genModalNpcConcept').value.trim();
       const race = document.getElementById('genModalNpcRace').value.trim();
-      if (!concept || !race) { alert('Concept and Race are required.'); return; }
+      if (!concept || !race) { toast('Concept and Race are required.', 'error'); return; }
 
       const body = {
         concept,
@@ -223,7 +232,7 @@ export async function runModalGeneration() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Generation failed'); }
+      if (!r.ok) { const e = await r.json(); throw new Error(_apiDetail(e.detail, 'Generation failed')); }
       const data = await r.json();
       state._modalGeneratedChar = data.character;
       state._modalGeneratedCharHistoryId = data.history_id ?? null;
@@ -234,9 +243,9 @@ export async function runModalGeneration() {
       document.getElementById('genModalSaveBtn').classList.remove('hidden');
     }
   } catch (e) {
-    resultEl.classList.remove('hidden');
-    resultEl.innerHTML = `<p class="text-red-400 text-sm">${e.message}</p>`;
+    toast(`Error: ${e.message}`, 'error');
   } finally {
+    clearInterval(_modalTimer);
     genBtn.disabled = false;
     spinner.classList.add('hidden');
     btnText.textContent = 'Regenerate';
@@ -247,11 +256,9 @@ export async function saveModalResult() {
   const saveBtn = document.getElementById('genModalSaveBtn');
   const spinner = document.getElementById('genModalSaveSpinner');
   const btnText = document.getElementById('genModalSaveBtnText');
-  const resultEl = document.getElementById('genModalSaveResult');
   saveBtn.disabled = true;
   spinner.classList.remove('hidden');
   btnText.textContent = 'Saving…';
-  resultEl.textContent = '';
 
   try {
     if (state._modalMode === 'item' && state._modalGeneratedItem) {
@@ -261,8 +268,7 @@ export async function saveModalResult() {
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Save failed');
-      resultEl.textContent = `✓ Saved to Items / ${state._modalGeneratedItem.item_type}`;
-      resultEl.className = 'text-xs text-green-400';
+      toast(`Saved to Items / ${state._modalGeneratedItem.item_type}`);
     } else if (state._modalMode === 'npc' && state._modalGeneratedChar) {
       const r = await fetch('/api/save', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -295,9 +301,9 @@ export async function saveModalResult() {
               npc_history_id: state._modalGeneratedCharHistoryId,
             });
           }
-          resultEl.textContent = `✓ Saved & linked to faction`;
+          toast('Saved & linked to faction');
         } catch {
-          resultEl.textContent = `✓ Saved (faction link failed — retry from faction sheet)`;
+          toast('Saved (faction link failed — retry from faction sheet)', 'info');
         }
         state._modalFactionContext = null;
       } else if (state._modalShopContext && data.docmost_url) {
@@ -326,19 +332,17 @@ export async function saveModalResult() {
               is_shopkeeper: state._modalShopContext.isShopkeeper,
             });
           }
-          resultEl.textContent = `✓ Saved & linked to shop`;
+          toast('Saved & linked to shop');
         } catch {
-          resultEl.textContent = `✓ Saved (shop link failed — retry from shop sheet)`;
+          toast('Saved (shop link failed — retry from shop sheet)', 'info');
         }
         state._modalShopContext = null;
       } else {
-        resultEl.textContent = `✓ Saved to Docmost`;
+        toast('Saved to Docmost');
       }
-      resultEl.className = 'text-xs text-green-400';
     }
   } catch (e) {
-    resultEl.textContent = `✗ ${e.message}`;
-    resultEl.className = 'text-xs text-red-400';
+    toast(e.message, 'error');
   } finally {
     saveBtn.disabled = false;
     spinner.classList.add('hidden');
@@ -361,6 +365,8 @@ const _COUNTER_FIELDS = [
   { id: 'factionNotes',   limitKey: 'max_notes_length' },
   { id: 'bestiaryConcept', limitKey: 'max_concept_length' },
   { id: 'bestiaryNotes',   limitKey: 'max_notes_length' },
+  { id: 'locationConcept', limitKey: 'max_concept_length' },
+  { id: 'locationNotes',   limitKey: 'max_notes_length' },
   { id: 'pcConcept',      limitKey: 'max_concept_length' },
   { id: 'pcAppearance',   limitKey: 'max_concept_length' },
   { id: 'pcNotes',        limitKey: 'max_notes_length' },
@@ -397,14 +403,32 @@ export function refreshCounterLimits() {
 // Event listeners
 // -----------------------------------------------------------------------
 
+function _handleEntryHash(hash) {
+  const m = hash.match(/^#entry\/(.+)$/);
+  if (!m) return false;
+  const entryId = m[1];
+  switchView('history', false);
+  // Load history if empty, then open the entry
+  if (state.historyEntries.length === 0) {
+    _prefetchHistory().then(() => openHistoryEntry(entryId));
+  } else {
+    openHistoryEntry(entryId);
+  }
+  return true;
+}
+
 window.addEventListener('hashchange', () => {
+  if (_handleEntryHash(location.hash)) return;
   const view = HASH_VIEWS[location.hash] || 'forge';
   switchView(view, false);
 });
 
 window.addEventListener('DOMContentLoaded', () => {
-  const view = HASH_VIEWS[location.hash] || 'forge';
-  switchView(view, false);
+  const entryHandled = _handleEntryHash(location.hash);
+  if (!entryHandled) {
+    const view = HASH_VIEWS[location.hash] || 'forge';
+    switchView(view, false);
+  }
   // Restore saved roll threshold preferences
   const savedCount = localStorage.getItem('rollMinCount');
   const savedValue = localStorage.getItem('rollMinValue');
@@ -415,6 +439,8 @@ window.addEventListener('DOMContentLoaded', () => {
   loadConfig();
   _initShopRarityToggles();
   _setupFieldCounters();
+  // _handleEntryHash fetches history itself; only prefetch separately when not navigating to an entry
+  if (!entryHandled) _prefetchHistory();
 });
 
 // -----------------------------------------------------------------------
@@ -422,7 +448,8 @@ window.addEventListener('DOMContentLoaded', () => {
 // -----------------------------------------------------------------------
 
 import {
-  el, sectionHeader, sign, _escHtml, _escAttr, _showTokenUsage as _showTokenUsageUtil,
+  el, sectionHeader, sign, toast as _toast, populateContextPicker, buildContextNote, getContextId, cacheHistoryEntry as _cacheHistoryEntry, copyEntryLink, _renderAssocLinks, _apiDetail,
+  _escHtml, _escAttr, _showTokenUsage as _showTokenUsageUtil,
   _formatTimestamp, _typeColor, _entrySubtitle, _editField, _editTextarea, _editSelect,
   _sectionLabel, RARITY_COLORS as _RARITY_COLORS,
 } from './utils.js';
@@ -466,6 +493,12 @@ import {
 } from './bestiary.js';
 
 import {
+  generateLocation, saveLocation, renderLocationSheet, _renderLocationContent,
+  onLocationTypeChange, onLocationContextChange, setLocationDetail, linkLocationParent,
+  _buildLocationEditForm, _collectLocationEdits, _renderLocationLinkPanel,
+} from './location.js';
+
+import {
   loadPartyRoster as _loadPartyRoster, renderPartyRoster, openPartyEntry,
   setPcMode, _submitPcGeneration, generatePlayerCharacter, createManualCharacter,
   addCurrentToParty, savePlayerCharacter, _populatePcStatInputs,
@@ -473,7 +506,7 @@ import {
 } from './players.js';
 
 import {
-  loadHistoryList as _loadHistoryList, filterHistory, setHistoryTag, _buildTagFilters,
+  loadHistoryList as _loadHistoryList, _prefetchHistory, filterHistory, setHistoryTag, _buildTagFilters,
   renderHistoryList as _renderHistoryList, openHistoryEntry, saveFromHistory,
   _updateHistorySyncStatus, showResyncWarning, cancelResync, confirmResync,
   enterEditMode, exitEditMode, saveEdit, exportHistoryToFoundry,
@@ -485,7 +518,7 @@ import {
 
 Object.assign(window, {
   // utils (direct use from HTML possible but generally called via other fns)
-  el, sectionHeader, sign, setBusy, _escHtml, _escAttr,
+  el, sectionHeader, sign, setBusy, toast: _toast, populateContextPicker, buildContextNote, getContextId, cacheHistoryEntry: _cacheHistoryEntry, copyEntryLink, _renderAssocLinks, _apiDetail, _escHtml, _escAttr,
   _showTokenUsage: _showTokenUsageUtil, _formatTimestamp, _typeColor, _entrySubtitle,
   _editField, _editTextarea, _editSelect, _sectionLabel, RARITY_COLORS: _RARITY_COLORS,
 
@@ -523,6 +556,11 @@ Object.assign(window, {
   exportMonsterToFoundryJSON, exportCurrentMonsterToFoundryJSON,
   _buildBestiaryEditForm, _collectBestiaryEdits,
 
+  // locations
+  generateLocation, saveLocation, renderLocationSheet, _renderLocationContent,
+  onLocationTypeChange, onLocationContextChange, setLocationDetail, linkLocationParent,
+  _buildLocationEditForm, _collectLocationEdits, _renderLocationLinkPanel,
+
   // players
   loadPartyRoster: _loadPartyRoster, renderPartyRoster, openPartyEntry,
   setPcMode, _submitPcGeneration, generatePlayerCharacter, createManualCharacter,
@@ -530,7 +568,7 @@ Object.assign(window, {
   applyPcStatEdits, exportPcToPDF, exportPcToFoundryJSON,
 
   // history
-  loadHistoryList: _loadHistoryList, filterHistory, setHistoryTag, _buildTagFilters,
+  loadHistoryList: _loadHistoryList, _prefetchHistory, filterHistory, setHistoryTag, _buildTagFilters,
   renderHistoryList: _renderHistoryList, openHistoryEntry, saveFromHistory,
   _updateHistorySyncStatus, showResyncWarning, cancelResync, confirmResync,
   enterEditMode, exitEditMode, saveEdit, exportHistoryToFoundry,

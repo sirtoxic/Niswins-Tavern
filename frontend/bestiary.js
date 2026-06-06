@@ -1,6 +1,6 @@
 // bestiary.js — bestiary/monster generation, rendering, and editing
 
-import { el, sectionHeader, setBusy, _escHtml, _showTokenUsage, _editField, _editTextarea, _sectionLabel } from './utils.js';
+import { el, sectionHeader, setBusy, toast, buildContextNote, getContextId, cacheHistoryEntry, _renderAssocLinks, _apiDetail, _escHtml, _showTokenUsage, _editField, _editTextarea, _sectionLabel } from './utils.js';
 import { state } from './state.js';
 
 // ---------------------------------------------------------------------------
@@ -24,6 +24,7 @@ export async function generateBestiary() {
       alignment:        document.getElementById('bestiaryAlignment').value,
       environment:      document.getElementById('bestiaryEnvironment').value.trim(),
       additional_notes: document.getElementById('bestiaryNotes').value.trim(),
+      parent_context_id: getContextId('bestiaryAssocSelect'),
     };
 
     const r = await fetch('/api/generate-bestiary', {
@@ -34,7 +35,7 @@ export async function generateBestiary() {
 
     if (!r.ok) {
       const err = await r.json();
-      throw new Error(err.detail || 'Generation failed');
+      throw new Error(_apiDetail(err.detail, 'Generation failed'));
     }
 
     const data = await r.json();
@@ -42,15 +43,17 @@ export async function generateBestiary() {
     state.currentMonsterHistoryId = data.history_id ?? null;
     state.currentMonsterSynced = false;
     state.currentMonsterDocmostUrl = null;
+    cacheHistoryEntry({ id: data.history_id, type: 'Monster', name: data.monster.name, monster_type: data.monster.monster_type, size: data.monster.size, cr: data.monster.challenge_rating, alignment: data.monster.alignment, timestamp: new Date().toISOString() });
 
     document.getElementById('bestiaryPlaceholder').classList.add('hidden');
     const container = document.getElementById('bestiaryResultContainer');
     container.classList.remove('hidden');
     renderBestiarySheet(state.currentMonster, container, false);
     document.getElementById('bestiarySaveSection').classList.remove('hidden');
+    _renderAssocLinks('bestiaryAssocLinks', data.history_id, 'bestiaryAssocSelect');
     _showTokenUsage(data.usage, 'bestiaryTokenUsage');
   } catch (e) {
-    alert(`Error: ${e.message}`);
+    toast(`Error: ${e.message}`, 'error');
   } finally {
     setBusy('generateBestiaryBtn', 'generateBestiarySpinner', 'generateBestiaryBtnText', false, 'Generate Monster');
   }
@@ -63,8 +66,6 @@ export async function generateBestiary() {
 export async function saveBestiary() {
   if (!state.currentMonster) return;
   setBusy('saveBestiaryBtn', 'saveBestiarySpinner', 'saveBestiaryBtnText', true, 'Saving…');
-  const resultEl = document.getElementById('bestiarySaveResult');
-  resultEl.classList.add('hidden');
 
   try {
     const r = await fetch('/api/save-bestiary', {
@@ -83,14 +84,9 @@ export async function saveBestiary() {
     state.currentMonsterSynced = true;
     state.currentMonsterDocmostUrl = data.docmost_url || null;
     renderBestiarySheet(state.currentMonster, document.getElementById('bestiaryResultContainer'), true);
-
-    resultEl.textContent = `✓ Saved to Bestiary / ${state.currentMonster.monster_type}`;
-    resultEl.className = 'text-xs text-center py-1 text-green-400';
-    resultEl.classList.remove('hidden');
+    toast(`Saved to Bestiary / ${state.currentMonster.monster_type}`);
   } catch (e) {
-    resultEl.textContent = `✗ ${e.message}`;
-    resultEl.className = 'text-xs text-center py-1 text-red-400';
-    resultEl.classList.remove('hidden');
+    toast(e.message, 'error');
   } finally {
     setBusy('saveBestiaryBtn', 'saveBestiarySpinner', 'saveBestiaryBtnText', false, 'Save to Docmost');
   }

@@ -1,12 +1,13 @@
 // history.js — history list, filtering, edit orchestration
 
-import { setBusy, _escHtml, _formatTimestamp, _typeColor, _entrySubtitle, RARITY_COLORS } from './utils.js';
+import { setBusy, toast, _escHtml, _formatTimestamp, _typeColor, _entrySubtitle, copyEntryLink, RARITY_COLORS } from './utils.js';
 import { state } from './state.js';
 import { renderSheet, exportToFoundryJSON as _exportCharacterToFoundry, _buildCharacterEditForm, _collectCharacterEdits } from './forge.js';
 import { renderItemSheet, exportItemToFoundryJSON, _buildItemEditForm, _collectItemEdits } from './items.js';
 import { renderShopSheet, _renderShopContent, _buildShopEditForm, _collectShopEdits } from './shop.js';
 import { renderFactionSheet, _buildFactionEditForm, _collectFactionEdits } from './faction.js';
 import { renderBestiarySheet, exportMonsterToFoundryJSON, _buildBestiaryEditForm, _collectBestiaryEdits } from './bestiary.js';
+import { _renderLocationContent, _renderLocationLinkPanel, _buildLocationEditForm, _collectLocationEdits } from './location.js';
 
 export async function loadHistoryList() {
   document.getElementById('historyEntriesList').innerHTML =
@@ -19,6 +20,13 @@ export async function loadHistoryList() {
     document.getElementById('historyEntriesList').innerHTML =
       `<p class="text-xs text-red-400 text-center pt-8">Failed to load history</p>`;
   }
+}
+
+export async function _prefetchHistory() {
+  try {
+    const r = await fetch('/api/history');
+    if (r.ok) state.historyEntries = await r.json();
+  } catch {}
 }
 
 export function filterHistory() {
@@ -126,6 +134,7 @@ export function renderHistoryList() {
       <div class="text-xs text-gray-500">${_entrySubtitle(entry)}</div>
       <div class="text-xs text-gray-600 mt-0.5">${_formatTimestamp(entry.timestamp)}</div>
       ${entry.docmost_page_id ? '<div class="text-xs text-green-600 mt-0.5">✓ Saved to Docmost</div>' : ''}
+      ${entry.parent_context ? `<a href="#entry/${_escHtml(entry.parent_context.id)}" class="block text-xs text-gray-500 hover:text-gold mt-0.5" onclick="event.stopPropagation()"><i class="fa-solid fa-link mr-1 opacity-50"></i>${_escHtml(entry.parent_context.name)}</a>` : ''}
     `;
     container.appendChild(card);
   }
@@ -151,6 +160,7 @@ export async function openHistoryEntry(entryId) {
     const isShop = entry.type === 'Shop';
     const isFaction = entry.type === 'Faction';
     const isMonster = entry.type === 'Monster';
+    const isLocation = entry.type === 'Location';
 
     if (isItem) {
       state.currentItem = entry.item;
@@ -183,12 +193,26 @@ export async function openHistoryEntry(entryId) {
       state.currentCharacter = null;
       state.currentShop = null;
       state.currentFaction = null;
+      state.currentLocation = null;
+    } else if (isLocation) {
+      state.currentLocation = entry.location;
+      state.currentLocationHistoryId = entry.id;
+      state.currentLocationSynced = !!entry.docmost_page_id;
+      state.currentLocationDocmostUrl = entry.docmost_url || null;
+      state.currentLocationParent = entry.parent_location || null;
+      state.currentLocationChildren = entry.child_locations || [];
+      state.currentItem = null;
+      state.currentCharacter = null;
+      state.currentShop = null;
+      state.currentFaction = null;
+      state.currentMonster = null;
     } else {
       state.currentCharacter = entry.character;
       state.currentItem = null;
       state.currentShop = null;
       state.currentFaction = null;
       state.currentMonster = null;
+      state.currentLocation = null;
     }
 
     // Meta line
@@ -202,14 +226,22 @@ export async function openHistoryEntry(entryId) {
       metaHtml += `<span class="ml-2">${entry.faction_type} · ${entry.size} · ${entry.alignment}</span>`;
     } else if (isMonster) {
       metaHtml += `<span class="ml-2">CR ${entry.cr} · ${entry.size} ${entry.monster_type} · ${entry.alignment}</span>`;
+    } else if (isLocation) {
+      metaHtml += `<span class="ml-2">${entry.location_type}`;
+      if (entry.location?.population) metaHtml += ` · Pop. ${entry.location.population}`;
+      metaHtml += '</span>';
     } else {
       metaHtml += `<span class="ml-2">${entry.character_class} · ${entry.race} · Level ${entry.level} · ${entry.alignment}</span>`;
     }
     metaHtml += `<span class="ml-2 text-gray-600">Generated ${_formatTimestamp(entry.timestamp)}</span>`;
+    if (entry.parent_context) {
+      const pcId = entry.parent_context.id;
+      metaHtml += `<span class="ml-2 text-xs"><i class="fa-solid fa-link mr-1 opacity-50"></i><a href="#entry/${_escHtml(pcId)}" class="text-gold hover:underline">${_escHtml(entry.parent_context.name)}</a> <span class="text-gray-600">(${_escHtml(entry.parent_context.type)})</span></span>`;
+    }
     document.getElementById('historyEntryMeta').innerHTML = metaHtml;
 
-    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isShop || isFaction);
-    document.getElementById('historySaveFolder').classList.toggle('hidden', isItem || isShop || isFaction || isMonster);
+    document.getElementById('historyFoundryBtn').classList.toggle('hidden', isShop || isFaction || isLocation);
+    document.getElementById('historySaveFolder').classList.toggle('hidden', isItem || isShop || isFaction || isMonster || isLocation);
 
     const link = document.getElementById('historyDocmostLink');
     if (entry.docmost_url) {
@@ -234,6 +266,9 @@ export async function openHistoryEntry(entryId) {
       _renderShopContent(entry.shop, historySheet, state.currentShopSynced, entry.linked_npcs || []);
     } else if (isMonster) {
       renderBestiarySheet(entry.monster, historySheet, state.currentMonsterSynced);
+    } else if (isLocation) {
+      _renderLocationContent(entry.location, historySheet, state.currentLocationSynced, entry.parent_location || null, entry.child_locations || []);
+      _renderLocationLinkPanel(historySheet);
     } else {
       renderSheet(entry.character, historySheet);
     }
@@ -247,7 +282,8 @@ export async function saveFromHistory() {
   const isShop = state.selectedHistoryEntryType === 'Shop';
   const isFaction = state.selectedHistoryEntryType === 'Faction';
   const isMonster = state.selectedHistoryEntryType === 'Monster';
-  const current = isItem ? state.currentItem : isShop ? state.currentShop : isFaction ? state.currentFaction : isMonster ? state.currentMonster : state.currentCharacter;
+  const isLocation = state.selectedHistoryEntryType === 'Location';
+  const current = isItem ? state.currentItem : isShop ? state.currentShop : isFaction ? state.currentFaction : isMonster ? state.currentMonster : isLocation ? state.currentLocation : state.currentCharacter;
   if (!current) return;
 
   setBusy('historySaveBtn', 'historySaveSpinner', 'historySaveBtnText', true, 'Saving…');
@@ -268,6 +304,9 @@ export async function saveFromHistory() {
     } else if (isMonster) {
       endpoint = '/api/save-bestiary';
       body = { monster: state.currentMonster, history_id: state.currentHistoryId };
+    } else if (isLocation) {
+      endpoint = '/api/save-location';
+      body = { location: state.currentLocation, history_id: state.currentHistoryId };
     } else {
       endpoint = '/api/save';
       body = { character: state.currentCharacter, folder: document.getElementById('historySaveFolder').value, history_id: state.currentHistoryId };
@@ -310,6 +349,13 @@ export async function saveFromHistory() {
       const historySheet = document.getElementById('historySheet');
       historySheet.innerHTML = '';
       renderBestiarySheet(state.currentMonster, historySheet, true);
+    } else if (isLocation) {
+      state.currentLocationSynced = true;
+      state.currentLocationDocmostUrl = data.docmost_url || null;
+      const historySheet = document.getElementById('historySheet');
+      historySheet.innerHTML = '';
+      _renderLocationContent(state.currentLocation, historySheet, true, entry?.parent_location || null, entry?.child_locations || []);
+      _renderLocationLinkPanel(historySheet);
     }
 
     if (data.docmost_url) {
@@ -385,6 +431,8 @@ export function enterEditMode() {
     sheet.appendChild(_buildFactionEditForm(state.currentFaction));
   } else if (state.selectedHistoryEntryType === 'Monster') {
     sheet.appendChild(_buildBestiaryEditForm(state.currentMonster));
+  } else if (state.selectedHistoryEntryType === 'Location') {
+    sheet.appendChild(_buildLocationEditForm(state.currentLocation));
   } else {
     sheet.appendChild(_buildCharacterEditForm(state.currentCharacter));
   }
@@ -406,6 +454,11 @@ export function exitEditMode(reRender = true) {
     else if (state.selectedHistoryEntryType === 'Monster') {
       renderBestiarySheet(state.currentMonster, sheet, state.currentMonsterSynced);
     }
+    else if (state.selectedHistoryEntryType === 'Location') {
+      const lEntry = state.historyEntries.find(e => e.id === state.currentHistoryId);
+      _renderLocationContent(state.currentLocation, sheet, state.currentLocationSynced, lEntry?.parent_location || null, lEntry?.child_locations || []);
+      _renderLocationLinkPanel(sheet);
+    }
     else renderSheet(state.currentCharacter, sheet);
   }
 
@@ -419,6 +472,7 @@ export async function saveEdit() {
   else if (state.selectedHistoryEntryType === 'Shop') updates = _collectShopEdits();
   else if (state.selectedHistoryEntryType === 'Faction') updates = _collectFactionEdits();
   else if (state.selectedHistoryEntryType === 'Monster') updates = _collectBestiaryEdits();
+  else if (state.selectedHistoryEntryType === 'Location') updates = _collectLocationEdits(state.currentLocation);
   else updates = _collectCharacterEdits();
 
   const btn = document.getElementById('historyEditSaveBtn');
@@ -459,7 +513,7 @@ export async function saveEdit() {
     renderHistoryList();
     exitEditMode(true);
   } catch (e) {
-    alert(`Save failed: ${e.message}`);
+    toast(`Save failed: ${e.message}`, 'error');
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i>Save Changes';

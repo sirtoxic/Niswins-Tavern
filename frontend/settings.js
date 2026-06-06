@@ -51,6 +51,7 @@ export async function loadSettings() {
     document.getElementById('campaignName').textContent = campaignName;
     document.getElementById('settingApiKey').value = s.anthropic_api_key || '';
     document.getElementById('settingClaudeModel').value = s.claude_model || '';
+    document.getElementById('settingLowTokenMode').checked = !!s.low_token_mode;
     document.getElementById('settingDocmostUrl').value = s.docmost_url || '';
     document.getElementById('settingDocmostUser').value = s.docmost_username || '';
     document.getElementById('settingDocmostPass').value = s.docmost_password || '';
@@ -89,6 +90,7 @@ export async function saveSettings() {
     campaign_name: document.getElementById('settingCampaignName').value.trim(),
     anthropic_api_key: document.getElementById('settingApiKey').value,
     claude_model: document.getElementById('settingClaudeModel').value.trim(),
+    low_token_mode: document.getElementById('settingLowTokenMode').checked,
     docmost_url: document.getElementById('settingDocmostUrl').value.trim(),
     docmost_username: document.getElementById('settingDocmostUser').value.trim(),
     docmost_password: document.getElementById('settingDocmostPass').value,

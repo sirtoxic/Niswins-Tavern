@@ -119,6 +119,7 @@
       <button id="navShops" onclick="switchView('shops')" class="nav-btn"><i class="fa-solid fa-store mr-1"></i>Shops</button>
       <button id="navFactions" onclick="switchView('factions')" class="nav-btn"><i class="fa-solid fa-flag mr-1"></i>Factions</button>
       <button id="navBestiary" onclick="switchView('bestiary')" class="nav-btn"><i class="fa-solid fa-dragon mr-1"></i>Bestiary</button>
+      <button id="navLocations" onclick="switchView('locations')" class="nav-btn"><i class="fa-solid fa-map-location-dot mr-1"></i>Locations</button>
       <button id="navPlayers" onclick="switchView('players')" class="nav-btn"><i class="fa-solid fa-shield-halved mr-1"></i>Players</button>
       <button id="navHistory" onclick="switchView('history')" class="nav-btn"><i class="fa-solid fa-scroll mr-1"></i>History</button>
       <button id="navSettings" onclick="switchView('settings')" class="nav-btn"><i class="fa-solid fa-gear mr-1"></i>Settings</button>
@@ -234,6 +235,14 @@
           </div>
         </div>
 
+        <div class="panel space-y-1.5">
+          <label class="text-xs text-gray-400 block"><i class="fa-solid fa-link mr-1 opacity-60"></i>Associate with (optional)</label>
+          <select id="forgeAssocSelect" onfocus="populateContextPicker('forgeAssocSelect')" class="input-field text-sm w-full">
+            <option value="">None</option>
+          </select>
+          <p class="text-xs text-gray-600">Attach this to any existing entry. The selection provides world context to the prompt.</p>
+        </div>
+
         <button id="generateBtn" onclick="generateCharacter()" class="btn-primary w-full flex items-center justify-center gap-2">
           <svg id="generateSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -261,6 +270,7 @@
           <span id="saveBtnText">Save to Docmost</span>
         </button>
         <div id="saveResult" class="hidden text-xs text-center py-1"></div>
+        <div id="forgeAssocLinks" class="hidden flex items-center gap-2 flex-wrap py-1 border-t border-border mt-1"></div>
 
         <div class="section-header mt-3">Export</div>
         <div class="grid grid-cols-2 gap-2">
@@ -413,6 +423,14 @@
           <span id="cnt-itemNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
         </div>
 
+        <div class="panel space-y-1.5">
+          <label class="text-xs text-gray-400 block"><i class="fa-solid fa-link mr-1 opacity-60"></i>Associate with (optional)</label>
+          <select id="itemsAssocSelect" onfocus="populateContextPicker('itemsAssocSelect')" class="input-field text-sm w-full">
+            <option value="">None</option>
+          </select>
+          <p class="text-xs text-gray-600">Attach this to any existing entry. The selection provides world context to the prompt.</p>
+        </div>
+
         <button id="generateItemBtn" onclick="generateItem()" class="btn-primary w-full flex items-center justify-center gap-2">
           <svg id="generateItemSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -435,6 +453,7 @@
           <span id="saveItemBtnText">Save to Docmost</span>
         </button>
         <div id="saveItemResult" class="hidden text-xs text-center py-1"></div>
+        <div id="itemsAssocLinks" class="hidden flex items-center gap-2 flex-wrap py-1 border-t border-border mt-1"></div>
 
         <div class="section-header mt-3">Export</div>
         <button onclick="exportItemToPDF()" class="btn-secondary text-xs py-2 w-full flex items-center justify-center gap-1">
@@ -534,6 +553,14 @@
           <span id="cnt-shopNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
         </div>
 
+        <div class="panel space-y-1.5">
+          <label class="text-xs text-gray-400 block"><i class="fa-solid fa-link mr-1 opacity-60"></i>Associate with (optional)</label>
+          <select id="shopAssocSelect" onfocus="populateContextPicker('shopAssocSelect')" class="input-field text-sm w-full">
+            <option value="">None</option>
+          </select>
+          <p class="text-xs text-gray-600">Attach this to any existing entry. The selection provides world context to the prompt.</p>
+        </div>
+
         <button id="generateShopBtn" onclick="generateShop()" class="btn-primary w-full flex items-center justify-center gap-2">
           <svg id="generateShopSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -572,6 +599,7 @@
           </div>
         </div>
         <div id="shopSaveResult" class="hidden text-xs text-center py-1"></div>
+        <div id="shopAssocLinks" class="hidden flex items-center gap-2 flex-wrap py-1 border-t border-border mt-1"></div>
 
         <!-- Generated content injected here by _renderShopContent -->
 
@@ -671,6 +699,14 @@
           <span id="cnt-factionNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
         </div>
 
+        <div class="panel space-y-1.5">
+          <label class="text-xs text-gray-400 block"><i class="fa-solid fa-link mr-1 opacity-60"></i>Associate with (optional)</label>
+          <select id="factionAssocSelect" onfocus="populateContextPicker('factionAssocSelect')" class="input-field text-sm w-full">
+            <option value="">None</option>
+          </select>
+          <p class="text-xs text-gray-600">Attach this to any existing entry. The selection provides world context to the prompt.</p>
+        </div>
+
         <button id="generateFactionBtn" onclick="generateFaction()" class="btn-primary w-full flex items-center justify-center gap-2">
           <svg id="generateFactionSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -693,6 +729,7 @@
           <span id="saveFactionBtnText">Save to Docmost</span>
         </button>
         <div id="saveFactionResult" class="hidden text-xs text-center py-1"></div>
+        <div id="factionAssocLinks" class="hidden flex items-center gap-2 flex-wrap py-1 border-t border-border mt-1"></div>
       </div>
     </aside>
 
@@ -825,6 +862,14 @@
           <span id="cnt-bestiaryNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
         </div>
 
+        <div class="panel space-y-1.5">
+          <label class="text-xs text-gray-400 block"><i class="fa-solid fa-link mr-1 opacity-60"></i>Associate with (optional)</label>
+          <select id="bestiaryAssocSelect" onfocus="populateContextPicker('bestiaryAssocSelect')" class="input-field text-sm w-full">
+            <option value="">None</option>
+          </select>
+          <p class="text-xs text-gray-600">Attach this to any existing entry. The selection provides world context to the prompt.</p>
+        </div>
+
         <button id="generateBestiaryBtn" onclick="generateBestiary()" class="btn-primary w-full flex items-center justify-center gap-2">
           <svg id="generateBestiarySpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -847,6 +892,7 @@
           <span id="saveBestiaryBtnText">Save to Docmost</span>
         </button>
         <div id="bestiarySaveResult" class="hidden text-xs text-center py-1"></div>
+        <div id="bestiaryAssocLinks" class="hidden flex items-center gap-2 flex-wrap py-1 border-t border-border mt-1"></div>
         <div class="section-header mt-3">Export</div>
         <button onclick="exportCurrentMonsterToFoundryJSON()" class="btn-secondary text-xs py-2 w-full flex items-center justify-center gap-1" id="bestiaryFoundryBtn">
           <i class="fa-solid fa-dice-d20"></i> Foundry VTT
@@ -867,6 +913,128 @@
     </main>
 
   </div><!-- /viewBestiary -->
+
+  <!-- Locations View -->
+  <div id="viewLocations" class="hidden flex h-[calc(100vh-73px)]">
+    <!-- Left sidebar: form -->
+    <div class="sidebar flex flex-col gap-3 overflow-y-auto">
+      <div class="panel space-y-3">
+        <div class="section-header">Location Type</div>
+        <select id="locationTypeSelect" class="input-field text-sm w-full" onchange="onLocationTypeChange()">
+          <option value="Continent">Continent</option>
+          <option value="Country">Country</option>
+          <option value="Region/Province">Region / Province</option>
+          <option value="City/Town" selected>City / Town</option>
+          <option value="District/Quarter">District / Quarter</option>
+          <option value="Building/Location">Building / Location</option>
+        </select>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Concept</label>
+          <textarea id="locationConcept" class="input-field text-sm w-full" rows="3" placeholder="e.g. A corrupt merchant city built on a volcanic island…"></textarea>
+          <div id="cnt-locationConcept" class="text-[10px] text-gray-600 tabular-nums text-right mt-0.5"></div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Atmosphere / Tone (optional)</label>
+          <input id="locationAtmosphere" type="text" class="input-field text-sm w-full" placeholder="e.g. Tense, gothic, bustling…" />
+        </div>
+      </div>
+
+      <!-- Type-specific fields -->
+      <div id="locationFieldClimate" class="panel hidden">
+        <label class="text-xs text-gray-400 block mb-1">Climate</label>
+        <input id="locationClimate" type="text" class="input-field text-sm w-full" placeholder="e.g. Temperate, tropical, arctic…" />
+      </div>
+      <div id="locationFieldTerrain" class="panel hidden">
+        <label class="text-xs text-gray-400 block mb-1">Terrain</label>
+        <input id="locationTerrain" type="text" class="input-field text-sm w-full" placeholder="e.g. Mountainous, coastal, forest…" />
+      </div>
+      <div id="locationFieldPopulation" class="panel hidden">
+        <label class="text-xs text-gray-400 block mb-1">Population Scale</label>
+        <input id="locationPopulation" type="text" class="input-field text-sm w-full" placeholder="e.g. Small town ~2,000, Metropolis ~500,000…" />
+      </div>
+      <div id="locationFieldGovernment" class="panel hidden">
+        <label class="text-xs text-gray-400 block mb-1">Government Type</label>
+        <input id="locationGovernment" type="text" class="input-field text-sm w-full" placeholder="e.g. Merchant republic, theocracy, military junta…" />
+      </div>
+      <div id="locationFieldBuildingType" class="panel hidden">
+        <label class="text-xs text-gray-400 block mb-1">Building Type</label>
+        <select id="locationBuildingType" class="input-field text-sm w-full">
+          <option value="">Not specified</option>
+          <option>Tavern/Inn</option><option>Temple/Shrine</option><option>Blacksmith</option>
+          <option>Alchemist/Apothecary</option><option>Magic Shop</option><option>General Store</option>
+          <option>Guild Hall</option><option>Noble Manor</option><option>Palace/Castle</option>
+          <option>Prison/Dungeon</option><option>Library/Archive</option><option>Barracks/Guard Post</option>
+          <option>Harbour/Dockyard</option><option>Ruins</option><option>Cave/Dungeon</option>
+          <option>Tower/Spire</option><option>Graveyard/Crypt</option><option>Arena/Coliseum</option>
+          <option>Theatre/Bard Hall</option><option>Other</option>
+        </select>
+      </div>
+
+      <!-- Merged context / parent selector -->
+      <div class="panel space-y-1.5">
+        <label class="text-xs text-gray-400 block"><i class="fa-solid fa-link mr-1 opacity-60"></i>Parent / Context (optional)</label>
+        <select id="locationContextSelect" onfocus="populateContextPicker('locationContextSelect', 'Location')" onchange="onLocationContextChange()" class="input-field text-sm w-full">
+          <option value="">None</option>
+        </select>
+        <p class="text-xs text-gray-600" id="locationContextHint">Select a parent location or any other entry for world context.</p>
+      </div>
+
+      <!-- Detail level -->
+      <div class="panel space-y-2">
+        <div class="section-header">Description Detail</div>
+        <div class="flex gap-1">
+          <button id="locationDetail-low" onclick="setLocationDetail('low')" class="flex-1 btn-secondary text-xs py-2">Short</button>
+          <button id="locationDetail-medium" onclick="setLocationDetail('medium')" class="flex-1 btn-primary text-xs py-2">Medium</button>
+          <button id="locationDetail-high" onclick="setLocationDetail('high')" class="flex-1 btn-secondary text-xs py-2">Long</button>
+        </div>
+      </div>
+
+      <!-- Additional notes -->
+      <div class="panel">
+        <label class="text-xs text-gray-400 block mb-1">Additional Notes</label>
+        <textarea id="locationNotes" class="input-field text-sm w-full" rows="2" placeholder="Specific details, constraints…"></textarea>
+        <div id="cnt-locationNotes" class="text-[10px] text-gray-600 tabular-nums text-right mt-0.5"></div>
+      </div>
+
+      <button onclick="generateLocation()" id="generateLocationBtn" class="btn-primary w-full flex items-center justify-center gap-2">
+        <svg id="generateLocationSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+        </svg>
+        <span id="generateLocationBtnText">Generate Location</span>
+      </button>
+    </div><!-- /sidebar -->
+
+    <!-- Right panel: result -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+      <div id="locationPlaceholder" class="flex flex-col items-center justify-center h-full text-gray-600">
+        <i class="fa-solid fa-map-location-dot text-4xl mb-3 opacity-30"></i>
+        <p class="text-sm">Generate a location to see the result here.</p>
+      </div>
+
+      <div id="locationSheet" class="hidden space-y-1"></div>
+
+      <!-- Token usage -->
+      <div id="locationTokenUsage" class="hidden flex items-center justify-center gap-1.5 text-xs text-gray-500 pt-1"></div>
+
+      <!-- Save section -->
+      <div id="locationSaveSection" class="hidden space-y-2 pt-2 border-t border-border">
+        <div class="flex gap-2 items-center flex-wrap">
+          <button onclick="saveLocation()" id="saveLocationBtn" class="btn-secondary flex items-center gap-2 text-sm">
+            <svg id="saveLocationSpinner" class="hidden spinner w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+            <span id="saveLocationBtnText">Save to Docmost</span>
+          </button>
+          <a id="locationDocmostLink" href="#" target="_blank" class="hidden text-xs text-gold hover:underline">
+            <i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>View in Docmost
+          </a>
+        </div>
+        <div id="locationAssocLinks" class="hidden flex items-center gap-2 flex-wrap py-1 border-t border-border mt-1"></div>
+      </div>
+    </div><!-- /right panel -->
+  </div><!-- /viewLocations -->
 
   <!-- Players View -->
   <div id="viewPlayers" class="hidden flex h-[calc(100vh-73px)]">
@@ -975,6 +1143,14 @@
             <textarea id="pcNotes" rows="2" placeholder="Has a scar across her cheek, secretly afraid of the dark…" class="input-field resize-none text-sm"></textarea>
             <span id="cnt-pcNotes" class="block text-right text-[10px] text-gray-600 tabular-nums mt-0.5">0 / 500</span>
           </div>
+          <div class="panel space-y-1.5">
+            <label class="text-xs text-gray-400 block"><i class="fa-solid fa-link mr-1 opacity-60"></i>Associate with (optional)</label>
+            <select id="playersAssocSelect" onfocus="populateContextPicker('playersAssocSelect')" class="input-field text-sm w-full">
+              <option value="">None</option>
+            </select>
+            <p class="text-xs text-gray-600">Attach this character to any existing entry for world context.</p>
+          </div>
+
           <button id="generatePcBtn" onclick="generatePlayerCharacter()" class="btn-primary w-full flex items-center justify-center gap-2">
             <svg id="generatePcSpinner" class="hidden spinner w-4 h-4" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -1123,6 +1299,7 @@
           <span id="savePcBtnText">Save to Docmost</span>
         </button>
         <div id="savePcResult" class="hidden text-xs text-center py-1"></div>
+        <div id="playersAssocLinks" class="hidden flex items-center gap-2 flex-wrap py-1 border-t border-border mt-1"></div>
 
         <div class="section-header mt-3">Edit Stats</div>
         <p class="text-xs text-gray-600 -mt-1">Saving throws, skills &amp; AC recalculate automatically.</p>
@@ -1233,6 +1410,7 @@
               <button onclick="exportToPDF()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-file-pdf mr-1"></i>PDF</button>
               <button id="historyFoundryBtn" onclick="exportHistoryToFoundry()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-dice-d20 mr-1"></i>Foundry VTT</button>
               <a id="historyDocmostLink" class="hidden btn-secondary text-xs py-1.5 px-3" href="#" target="_blank" rel="noopener" style="text-decoration:none">View in Docmost →</a>
+              <button id="historyCopyLinkBtn" onclick="copyEntryLink(window._state?.currentHistoryId)" class="btn-secondary text-xs py-1.5 px-3" title="Copy a shareable link to this entry"><i class="fa-solid fa-link mr-1"></i>Copy Link</button>
               <button onclick="enterEditMode()" class="btn-secondary text-xs py-1.5 px-3"><i class="fa-solid fa-pen mr-1"></i>Edit</button>
             </div>
             <div id="historyEditButtons" class="hidden flex flex-wrap gap-2 items-center">
@@ -1320,6 +1498,14 @@
             <option value="claude-opus-4-8">
           </datalist>
           <p class="text-xs text-gray-600 mt-1">Model used for all generation. Changing this affects cost and output quality.</p>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Low Token Mode</label>
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="settingLowTokenMode" class="rounded" />
+            <span class="text-sm text-parchment">Use Haiku for staff &amp; member regeneration</span>
+          </label>
+          <p class="text-xs text-gray-600 mt-1">Sub-generation calls (add/regenerate staff, faction members) use <span class="text-gold">claude-haiku-4-5</span> instead of the model above — ~20× cheaper for tiny outputs.</p>
         </div>
       </div>
 

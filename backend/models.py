@@ -236,6 +236,7 @@ class GenerateRequest(BaseModel):
     player_name: Optional[str] = None
     is_player_character: bool = False
     manual_ability_scores: Optional[dict] = None  # {str, dex, con, int, wis, cha: int}
+    parent_context_id: Optional[str] = None
 
     @field_validator('concept', 'appearance')
     @classmethod
@@ -309,6 +310,7 @@ class GenerateItemRequest(BaseModel):
     stat_bonus_target: str = ""    # e.g. "Strength", "Attack Rolls", "Dexterity Saving Throws"
     damage_type: str = ""          # e.g. "Fire", "Cold", "Necrotic" — relevant for weapons
     attunement: str = "auto"       # "auto" | "required" | "none"
+    parent_context_id: Optional[str] = None
 
     @field_validator('concept')
     @classmethod
@@ -387,6 +389,7 @@ class GenerateShopRequest(BaseModel):
     rarities: list[str] = ["Common", "Uncommon"]
     detail_level: str = "medium"
     additional_notes: str = ""
+    parent_context_id: Optional[str] = None
 
     @field_validator('item_count')
     @classmethod
@@ -469,6 +472,7 @@ class GenerateFactionRequest(BaseModel):
     reputation: str = "Neutral"
     region: str = ""
     additional_notes: str = ""
+    parent_context_id: Optional[str] = None
 
     @field_validator('concept', 'region')
     @classmethod
@@ -591,6 +595,7 @@ class GenerateBestiaryRequest(BaseModel):
     alignment: str = "Unaligned"
     environment: str = ""
     additional_notes: str = ""
+    parent_context_id: Optional[str] = None
 
     @field_validator('concept', 'environment')
     @classmethod
@@ -612,10 +617,91 @@ class SaveBestiaryRequest(BaseModel):
     history_id: Optional[str] = None
 
 
+# ---------------------------------------------------------------------------
+# Location
+# ---------------------------------------------------------------------------
+
+class LocationNotableNpc(BaseModel):
+    name: str
+    role: str
+    concept: str = ""
+
+
+class Location(BaseModel):
+    name: str
+    location_type: str
+    description: str
+    atmosphere: str
+    history: str = ""
+    climate: Optional[str] = None
+    terrain: Optional[str] = None
+    population: Optional[str] = None
+    government: Optional[str] = None
+    economy: Optional[str] = None
+    dominant_culture: Optional[str] = None
+    building_type: Optional[str] = None
+    condition: Optional[str] = None
+    owner: Optional[str] = None
+    notable_features: list[str] = []
+    notable_npcs: list[LocationNotableNpc] = []
+    secrets: list[str] = []
+    plot_hooks: list[str] = []
+    factions: list[str] = []
+
+
+class GenerateLocationRequest(BaseModel):
+    concept: str = ""
+    location_type: str = "City/Town"
+    climate: str = ""
+    terrain: str = ""
+    population_scale: str = ""
+    government_type: str = ""
+    building_type: str = ""
+    atmosphere_hint: str = ""
+    additional_notes: str = ""
+    detail_level: str = "medium"
+    parent_context_id: Optional[str] = None
+
+    @field_validator('concept')
+    @classmethod
+    def _check_concept_length(cls, v: str) -> str:
+        if len(v) > _limits['max_concept_length']:
+            raise ValueError(f'Must be at most {_limits["max_concept_length"]} characters ({len(v)} given)')
+        return v
+
+    @field_validator('additional_notes')
+    @classmethod
+    def _check_notes_length(cls, v: str) -> str:
+        if len(v) > _limits['max_notes_length']:
+            raise ValueError(f'Must be at most {_limits["max_notes_length"]} characters ({len(v)} given)')
+        return v
+
+
+class SaveLocationRequest(BaseModel):
+    location: Location
+    history_id: Optional[str] = None
+    parent_location_id: Optional[str] = None
+
+
+class LinkLocationChildRequest(BaseModel):
+    child_history_id: str
+    child_name: str
+    child_type: str
+    child_docmost_url: Optional[str] = None
+
+
+class LinkLocationParentRequest(BaseModel):
+    parent_history_id: str
+    parent_name: str
+    parent_type: str
+    parent_docmost_url: Optional[str] = None
+
+
 class SettingsUpdate(BaseModel):
     campaign_name: str = ""
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-6"
+    low_token_mode: bool = False
     docmost_url: str = ""
     docmost_username: str = ""
     docmost_password: str = ""

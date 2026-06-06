@@ -1,6 +1,6 @@
 // forge.js — NPC/character generation, rendering, editing, export
 
-import { el, sectionHeader, sign, setBusy, _escHtml, _escAttr, _showTokenUsage, _editField, _editTextarea, _editSelect, _sectionLabel } from './utils.js';
+import { el, sectionHeader, sign, setBusy, toast, buildContextNote, getContextId, cacheHistoryEntry, _renderAssocLinks, _apiDetail, _escHtml, _escAttr, _showTokenUsage, _editField, _editTextarea, _editSelect, _sectionLabel } from './utils.js';
 import { state } from './state.js';
 import { rollForgeStats, _recalcAbilityScores, _ABILITY_KEYS } from './stats.js';
 
@@ -10,7 +10,7 @@ export async function generateCharacter() {
   const charClass = document.getElementById('charClass').value;
 
   if (!concept || !race) {
-    alert('Please fill in Concept and Race before generating.');
+    toast('Please fill in Concept and Race before generating.', 'error');
     return;
   }
 
@@ -33,6 +33,7 @@ export async function generateCharacter() {
       additional_notes: document.getElementById('notes').value.trim(),
       generic_npc: document.getElementById('genericNpcMode').checked,
       manual_ability_scores: state.forgeRolledStats,
+      parent_context_id: getContextId('forgeAssocSelect'),
     };
 
     const r = await fetch('/api/generate', {
@@ -43,17 +44,19 @@ export async function generateCharacter() {
 
     if (!r.ok) {
       const err = await r.json();
-      throw new Error(err.detail || 'Generation failed');
+      throw new Error(_apiDetail(err.detail, 'Generation failed'));
     }
 
     const data = await r.json();
     state.currentCharacter = data.character;
     state.currentHistoryId = data.history_id ?? null;
+    cacheHistoryEntry({ id: data.history_id, type: body.generic_npc ? 'Generic NPC' : 'Character', name: data.character.name, race: data.character.race, character_class: data.character.character_class, level: data.character.level, alignment: data.character.alignment, timestamp: new Date().toISOString() });
     renderSheet(state.currentCharacter);
     document.getElementById('saveSection').classList.remove('hidden');
+    _renderAssocLinks('forgeAssocLinks', data.history_id, 'forgeAssocSelect');
     _showTokenUsage(data.usage);
   } catch (e) {
-    alert(`Error: ${e.message}`);
+    toast(`Error: ${e.message}`, 'error');
   } finally {
     setBusy('generateBtn', 'generateSpinner', 'generateBtnText', false, 'Generate Character');
   }
@@ -63,8 +66,6 @@ export async function saveCharacter() {
   if (!state.currentCharacter) return;
   const folder = document.getElementById('saveFolder').value;
   setBusy('saveBtn', 'saveSpinner', 'saveBtnText', true, 'Saving…');
-  const resultEl = document.getElementById('saveResult');
-  resultEl.classList.add('hidden');
 
   try {
     const r = await fetch('/api/save', {
@@ -81,13 +82,9 @@ export async function saveCharacter() {
       entry.docmost_url = data.docmost_url;
     }
 
-    resultEl.textContent = `✓ Saved to Docmost (page ${data.page_id})`;
-    resultEl.className = 'text-xs text-center py-1 text-green-400';
-    resultEl.classList.remove('hidden');
+    toast(`Saved to Docmost (page ${data.page_id})`);
   } catch (e) {
-    resultEl.textContent = `✗ ${e.message}`;
-    resultEl.className = 'text-xs text-center py-1 text-red-400';
-    resultEl.classList.remove('hidden');
+    toast(e.message, 'error');
   } finally {
     setBusy('saveBtn', 'saveSpinner', 'saveBtnText', false, 'Save to Docmost');
   }

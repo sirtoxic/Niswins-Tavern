@@ -15,6 +15,8 @@ _FALLBACK_INPUT_PER_TOKEN = 0.000003   # $3/MTok
 _FALLBACK_OUTPUT_PER_TOKEN = 0.000015  # $15/MTok
 
 _model_ref = ["claude-sonnet-4-6"]
+_low_token_mode_ref = [False]
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 
 def get_model() -> str:
@@ -23,6 +25,14 @@ def get_model() -> str:
 
 def set_model(model: str) -> None:
     _model_ref[0] = model
+
+
+def get_low_token_mode() -> bool:
+    return _low_token_mode_ref[0]
+
+
+def set_low_token_mode(enabled: bool) -> None:
+    _low_token_mode_ref[0] = bool(enabled)
 
 
 async def _get_model_pricing(model: str) -> tuple:
@@ -52,9 +62,10 @@ async def call_claude(
     user_prompt: str,
     max_tokens: int,
     system: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> tuple:
     """Call Claude, strip code fences, and return (raw_text, usage_dict)."""
-    model = get_model()
+    model = model or get_model()
     client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     kwargs = dict(

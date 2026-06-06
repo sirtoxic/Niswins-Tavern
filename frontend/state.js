@@ -44,4 +44,14 @@ export const state = {
     max_character_level: 20,
     max_shop_items: 20,
   },
+  currentLocation: null,
+  currentLocationHistoryId: null,
+  currentLocationSynced: false,
+  currentLocationDocmostUrl: null,
+  currentLocationParent: null,
+  currentLocationChildren: [],
+  locationDetailLevel: 'medium',
 };
+
+// Expose for utils.js context picker (avoids circular ES module import)
+window._state = state;

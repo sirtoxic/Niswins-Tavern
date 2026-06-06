@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from models import Shop, GenerateShopRequest, ShopStaff
-from ai_client import call_claude
+from ai_client import call_claude, get_low_token_mode, HAIKU_MODEL
 
 _SYSTEM_PROMPT = """You are a D&D 5e worldbuilder specialising in creating vivid, memorable shops and merchants for tabletop RPGs. You produce detailed, flavourful content as structured JSON.
 
@@ -144,5 +144,6 @@ Description: {overview_excerpt}
 Return ONLY a JSON object matching this schema:
 {schema}"""
 
-    raw, _ = await call_claude(prompt, max_tokens=512)
+    sub_model = HAIKU_MODEL if get_low_token_mode() else None
+    raw, _ = await call_claude(prompt, max_tokens=512, model=sub_model)
     return json.loads(raw)

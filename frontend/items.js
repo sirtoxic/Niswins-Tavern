@@ -1,6 +1,6 @@
 // items.js — item generation, rendering, editing
 
-import { el, sectionHeader, setBusy, _escHtml, _escAttr, _showTokenUsage, RARITY_COLORS, _editField, _editTextarea, _editSelect, _sectionLabel } from './utils.js';
+import { el, sectionHeader, setBusy, toast, buildContextNote, getContextId, cacheHistoryEntry, _renderAssocLinks, _apiDetail, _escHtml, _escAttr, _showTokenUsage, RARITY_COLORS, _editField, _editTextarea, _editSelect, _sectionLabel } from './utils.js';
 import { state } from './state.js';
 
 export async function generateItem() {
@@ -8,14 +8,14 @@ export async function generateItem() {
   const itemType = document.getElementById('itemType').value.trim();
 
   if (!concept || !itemType) {
-    alert('Please fill in Concept and Item Type before generating.');
+    toast('Please fill in Concept and Item Type before generating.', 'error');
     return;
   }
 
   const minLevel = parseInt(document.getElementById('itemLevelMin').value);
   const maxLevel = parseInt(document.getElementById('itemLevelMax').value);
   if (minLevel > maxLevel) {
-    alert('Min Level cannot be greater than Max Level.');
+    toast('Min Level cannot be greater than Max Level.', 'error');
     return;
   }
 
@@ -33,6 +33,7 @@ export async function generateItem() {
       target_level_min: minLevel,
       target_level_max: maxLevel,
       additional_notes: document.getElementById('itemNotes').value.trim(),
+      parent_context_id: getContextId('itemsAssocSelect'),
       magic_theme: document.getElementById('itemMagicTheme').value.trim(),
       material: document.getElementById('itemMaterial').value.trim(),
       stat_bonus_target: document.getElementById('itemStatBonus').value.trim(),
@@ -48,20 +49,22 @@ export async function generateItem() {
 
     if (!r.ok) {
       const err = await r.json();
-      throw new Error(err.detail || 'Generation failed');
+      throw new Error(_apiDetail(err.detail, 'Generation failed'));
     }
 
     const data = await r.json();
     state.currentItem = data.item;
     state.currentItemHistoryId = data.history_id ?? null;
+    cacheHistoryEntry({ id: data.history_id, type: 'Item', name: data.item.name, item_type: data.item.item_type, rarity: data.item.rarity, target_level_min: data.item.target_level_min, target_level_max: data.item.target_level_max, timestamp: new Date().toISOString() });
 
     document.getElementById('itemPlaceholder').classList.add('hidden');
     document.getElementById('itemSheet').classList.remove('hidden');
     renderItemSheet(state.currentItem);
     document.getElementById('itemSaveSection').classList.remove('hidden');
+    _renderAssocLinks('itemsAssocLinks', data.history_id, 'itemsAssocSelect');
     _showTokenUsage(data.usage, 'itemTokenUsage');
   } catch (e) {
-    alert(`Error: ${e.message}`);
+    toast(`Error: ${e.message}`, 'error');
   } finally {
     setBusy('generateItemBtn', 'generateItemSpinner', 'generateItemBtnText', false, 'Generate Item');
   }
@@ -70,8 +73,6 @@ export async function generateItem() {
 export async function saveItem() {
   if (!state.currentItem) return;
   setBusy('saveItemBtn', 'saveItemSpinner', 'saveItemBtnText', true, 'Saving…');
-  const resultEl = document.getElementById('saveItemResult');
-  resultEl.classList.add('hidden');
 
   try {
     const r = await fetch('/api/save-item', {
@@ -88,13 +89,9 @@ export async function saveItem() {
       entry.docmost_url = data.docmost_url;
     }
 
-    resultEl.textContent = `✓ Saved to Items / ${state.currentItem.item_type}`;
-    resultEl.className = 'text-xs text-center py-1 text-green-400';
-    resultEl.classList.remove('hidden');
+    toast(`Saved to Items / ${state.currentItem.item_type}`);
   } catch (e) {
-    resultEl.textContent = `✗ ${e.message}`;
-    resultEl.className = 'text-xs text-center py-1 text-red-400';
-    resultEl.classList.remove('hidden');
+    toast(e.message, 'error');
   } finally {
     setBusy('saveItemBtn', 'saveItemSpinner', 'saveItemBtnText', false, 'Save to Docmost');
   }

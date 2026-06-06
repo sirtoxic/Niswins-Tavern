@@ -35,7 +35,10 @@
 
 import os
 import json
+import logging
 import yaml
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -43,13 +46,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, LinkShopNpcRequest, RegenerateShopStaffRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest, GenerateFactionRequest, SaveFactionRequest, LinkFactionNpcRequest, RegenerateMemberRequest, Monster, GenerateBestiaryRequest, SaveBestiaryRequest, set_validation_limits
+from models import GenerateRequest, SaveRequest, Character, GenerateItemRequest, SaveItemRequest, GenerateShopRequest, SaveShopRequest, LinkShopNpcRequest, RegenerateShopStaffRequest, SettingsUpdate, TestPageUrlRequest, UpdateEntryRequest, GenerateFactionRequest, SaveFactionRequest, LinkFactionNpcRequest, RegenerateMemberRequest, Monster, GenerateBestiaryRequest, SaveBestiaryRequest, GenerateLocationRequest, SaveLocationRequest, LinkLocationChildRequest, LinkLocationParentRequest, set_validation_limits
 from character_generator import generate_character
-from ai_client import set_model
+from ai_client import set_model, set_low_token_mode
 from item_generator import generate_item
 from shop_generator import generate_shop, generate_shop_staff
 from faction_generator import generate_faction, generate_faction_member
 from bestiary_generator import generate_bestiary
+from location_generator import generate_location
 from docmost_client import DocmostClient
 import history_store
 
@@ -147,6 +151,7 @@ def _load_model_from_config() -> None:
     model = cfg.get("claude", {}).get("model", "claude-sonnet-4-6")
     if model:
         set_model(model)
+    set_low_token_mode(cfg.get("claude", {}).get("low_token_mode", False))
 
 
 _ensure_config_files()
@@ -192,6 +197,7 @@ async def get_settings():
         "campaign_name": cfg.get("campaign_name", ""),
         "anthropic_api_key": api_key,
         "claude_model": cfg.get("claude", {}).get("model", "claude-sonnet-4-6"),
+        "low_token_mode": cfg.get("claude", {}).get("low_token_mode", False),
         "docmost_url": dcfg.get("url", ""),
         "docmost_username": dcfg.get("username", ""),
         "docmost_password": dcfg.get("password", ""),
@@ -245,8 +251,9 @@ async def update_settings(req: SettingsUpdate):
                 "players": req.folder_url_players,
             },
         }
-        cfg["claude"] = {"model": req.claude_model}
+        cfg["claude"] = {"model": req.claude_model, "low_token_mode": req.low_token_mode}
         set_model(req.claude_model)
+        set_low_token_mode(req.low_token_mode)
         cfg["campaign_name"] = req.campaign_name
 
         with open(CONFIG_PATH, "w") as f:
@@ -275,6 +282,7 @@ async def api_generate(req: GenerateRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
+        req = req.model_copy(update={'additional_notes': _inject_context_note(req.additional_notes, req.parent_context_id)})
         character, usage = await generate_character(req)
 
         ts = datetime.now(timezone.utc)
@@ -295,6 +303,7 @@ async def api_generate(req: GenerateRequest):
             "generation_params": req.model_dump(),
             "token_usage": usage,
             "character": character.model_dump(),
+            "parent_context": _resolve_parent_context(req.parent_context_id),
         }
         history_store.save_entry(entry)
         _update_token_stats(usage)
@@ -302,6 +311,43 @@ async def api_generate(req: GenerateRequest):
         return {"character": character, "usage": usage, "history_id": entry_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _inject_context_note(additional_notes: str, parent_context_id: Optional[str]) -> str:
+    """Look up parent_context_id and append a world-context sentence to additional_notes."""
+    if not parent_context_id:
+        return additional_notes
+    try:
+        entry = history_store.get_entry(parent_context_id)
+        name = entry.get("name", "")
+        entry_type = entry.get("location_type") or entry.get("type", "")
+        detail = ""
+        if entry.get("location"):
+            detail = entry["location"].get("atmosphere") or (entry["location"].get("description") or "")[:120]
+        elif entry.get("faction"):
+            detail = (entry["faction"].get("overview") or "")[:120]
+        elif entry.get("shop"):
+            detail = entry["shop"].get("atmosphere", "")
+        detail_str = f" — {detail}" if detail else ""
+        note = f'World context: This content exists within or relates to "{name}" ({entry_type}){detail_str}. Generate content that fits naturally within this established context.'
+        return f"{additional_notes}\n\n{note}".strip() if additional_notes else note
+    except Exception:
+        return additional_notes
+
+
+def _resolve_parent_context(parent_context_id: Optional[str]) -> Optional[dict]:
+    """Return a lightweight metadata dict for a parent context entry, or None."""
+    if not parent_context_id:
+        return None
+    try:
+        entry = history_store.get_entry(parent_context_id)
+        return {
+            "id": parent_context_id,
+            "name": entry.get("name", ""),
+            "type": entry.get("type", ""),
+        }
+    except Exception:
+        return None
 
 
 def _existing_page_id(history_id: Optional[str]) -> Optional[str]:
@@ -342,6 +388,7 @@ async def api_generate_item(req: GenerateItemRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
+        req = req.model_copy(update={'additional_notes': _inject_context_note(req.additional_notes, req.parent_context_id)})
         item, usage = await generate_item(req)
 
         ts = datetime.now(timezone.utc)
@@ -360,6 +407,7 @@ async def api_generate_item(req: GenerateItemRequest):
             "generation_params": req.model_dump(),
             "token_usage": usage,
             "item": item.model_dump(),
+            "parent_context": _resolve_parent_context(req.parent_context_id),
         }
         history_store.save_entry(entry)
         _update_token_stats(usage)
@@ -397,6 +445,7 @@ async def api_generate_shop(req: GenerateShopRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
+        req = req.model_copy(update={'additional_notes': _inject_context_note(req.additional_notes, req.parent_context_id)})
         shop, usage = await generate_shop(req)
 
         ts = datetime.now(timezone.utc)
@@ -414,6 +463,7 @@ async def api_generate_shop(req: GenerateShopRequest):
             "generation_params": req.model_dump(),
             "token_usage": usage,
             "shop": shop.model_dump(),
+            "parent_context": _resolve_parent_context(req.parent_context_id),
         }
         history_store.save_entry(entry)
         _update_token_stats(usage)
@@ -539,6 +589,7 @@ async def api_generate_faction(req: GenerateFactionRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
+        req = req.model_copy(update={'additional_notes': _inject_context_note(req.additional_notes, req.parent_context_id)})
         faction, usage = await generate_faction(req)
 
         ts = datetime.now(timezone.utc)
@@ -556,6 +607,7 @@ async def api_generate_faction(req: GenerateFactionRequest):
             "generation_params": req.model_dump(),
             "token_usage": usage,
             "faction": faction.model_dump(),
+            "parent_context": _resolve_parent_context(req.parent_context_id),
         }
         history_store.save_entry(entry)
         _update_token_stats(usage)
@@ -684,6 +736,7 @@ async def api_generate_bestiary(req: GenerateBestiaryRequest):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
     try:
+        req = req.model_copy(update={'additional_notes': _inject_context_note(req.additional_notes, req.parent_context_id)})
         monster, usage = await generate_bestiary(req)
 
         ts = datetime.now(timezone.utc)
@@ -702,6 +755,7 @@ async def api_generate_bestiary(req: GenerateBestiaryRequest):
             "generation_params": req.model_dump(),
             "token_usage": usage,
             "monster": monster.model_dump(),
+            "parent_context": _resolve_parent_context(req.parent_context_id),
         }
         history_store.save_entry(entry)
         _update_token_stats(usage)
@@ -738,7 +792,7 @@ async def api_save_bestiary(req: SaveBestiaryRequest):
 async def update_history_entry(entry_id: str, req: UpdateEntryRequest):
     try:
         entry = history_store.get_entry(entry_id)
-        obj_key = {"Character": "character", "Generic NPC": "character", "Player Character": "character", "Item": "item", "Shop": "shop", "Faction": "faction", "Monster": "monster"}.get(entry.get("type", ""))
+        obj_key = {"Character": "character", "Generic NPC": "character", "Player Character": "character", "Item": "item", "Shop": "shop", "Faction": "faction", "Monster": "monster", "Location": "location"}.get(entry.get("type", ""))
         if obj_key and obj_key in entry:
             entry[obj_key].update(req.updates)
         # Keep top-level metadata in sync with edited fields
@@ -764,6 +818,10 @@ async def update_history_entry(entry_id: str, req: UpdateEntryRequest):
                     entry[k] = req.updates[k]
             if "challenge_rating" in req.updates:
                 entry["cr"] = req.updates["challenge_rating"]
+        if obj_key == "location":
+            for k in ("location_type",):
+                if k in req.updates:
+                    entry[k] = req.updates[k]
         edited_at = datetime.now(timezone.utc).isoformat()
         entry["edited_at"] = edited_at
         out_of_sync = bool(entry.get("docmost_page_id"))
@@ -799,6 +857,239 @@ async def api_history_entry(entry_id: str):
 async def api_players_list():
     entries = history_store.list_entries()
     return [e for e in entries if e.get("type") == "Player Character"]
+
+
+@app.post("/api/generate-location")
+async def api_generate_location(req: GenerateLocationRequest):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set in config.yaml")
+    try:
+        req = req.model_copy(update={'additional_notes': _inject_context_note(req.additional_notes, req.parent_context_id)})
+        location, usage = await generate_location(req)
+
+        ts = datetime.now(timezone.utc)
+        entry_id = history_store.make_entry_id(ts, location.name)
+        entry = {
+            "id": entry_id,
+            "timestamp": ts.isoformat(),
+            "type": "Location",
+            "name": location.name,
+            "location_type": location.location_type,
+            "docmost_page_id": None,
+            "docmost_url": None,
+            "generation_params": req.model_dump(),
+            "token_usage": usage,
+            "location": location.model_dump(),
+            "parent_location": None,
+            "child_locations": [],
+            "parent_context": _resolve_parent_context(req.parent_context_id),
+        }
+        history_store.save_entry(entry)
+        _update_token_stats(usage)
+
+        return {"location": location, "usage": usage, "history_id": entry_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/save-location")
+async def api_save_location(req: SaveLocationRequest):
+    try:
+        parent_location = None
+        child_locations = []
+        if req.history_id:
+            try:
+                entry = history_store.get_entry(req.history_id)
+                parent_location = entry.get("parent_location")
+                child_locations = entry.get("child_locations", [])
+            except Exception:
+                pass
+
+        # If parent_location_id given, load it and do the cross-link
+        if req.parent_location_id:
+            try:
+                parent_entry = history_store.get_entry(req.parent_location_id)
+                parent_location = {
+                    "id": req.parent_location_id,
+                    "name": parent_entry.get("name", ""),
+                    "type": parent_entry.get("location_type", "Location"),
+                    "docmost_url": parent_entry.get("docmost_url", ""),
+                }
+            except Exception:
+                pass
+
+        page_id, docmost_url = await docmost.save_location(
+            req.location,
+            existing_page_id=_existing_page_id(req.history_id),
+            parent_location=parent_location or None,
+            child_locations=child_locations or None,
+        )
+
+        if req.history_id:
+            try:
+                patch = {
+                    "docmost_page_id": page_id,
+                    "docmost_url": docmost_url,
+                    "docmost_synced_at": datetime.now(timezone.utc).isoformat(),
+                    "docmost_out_of_sync": False,
+                }
+                if req.parent_location_id and parent_location:
+                    patch["parent_location"] = {**parent_location, "docmost_url": docmost_url or parent_location.get("docmost_url", "")}
+                    # Update this entry's parent_location with actual saved URL
+                    patch["parent_location"]["docmost_url"] = parent_location.get("docmost_url", "")
+                history_store.patch_entry(req.history_id, patch)
+            except Exception:
+                pass
+
+        # If new parent assigned, register this location as a child of the parent
+        if req.parent_location_id:
+            try:
+                parent_entry = history_store.get_entry(req.parent_location_id)
+                children = parent_entry.get("child_locations", [])
+                children = [c for c in children if c.get("id") != req.history_id]
+                children.append({
+                    "id": req.history_id,
+                    "name": req.location.name,
+                    "type": req.location.location_type,
+                    "docmost_url": docmost_url,
+                })
+                parent_entry["child_locations"] = children
+                history_store.save_entry(parent_entry)
+
+                # Re-save parent page if it's synced, to add this child to Contains section
+                parent_page_id = parent_entry.get("docmost_page_id")
+                if parent_page_id and parent_entry.get("location"):
+                    from models import Location
+                    parent_loc_obj = Location(**parent_entry["location"])
+                    parent_parent = parent_entry.get("parent_location")
+                    await docmost.save_location(
+                        parent_loc_obj,
+                        existing_page_id=parent_page_id,
+                        parent_location=parent_parent,
+                        child_locations=children,
+                    )
+            except Exception as e:
+                logger.warning(f"Could not update parent location with child link: {e}")
+
+        return {"success": True, "page_id": page_id, "docmost_url": docmost_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/location/{location_id}/link-child")
+async def link_location_child(location_id: str, req: LinkLocationChildRequest):
+    """Add a child location to this location and update both history entries and Docmost pages."""
+    try:
+        parent_entry = history_store.get_entry(location_id)
+        if parent_entry.get("type") != "Location":
+            raise HTTPException(status_code=400, detail="Entry is not a Location")
+
+        children = parent_entry.get("child_locations", [])
+        children = [c for c in children if c.get("id") != req.child_history_id]
+        children.append({
+            "id": req.child_history_id,
+            "name": req.child_name,
+            "type": req.child_type,
+            "docmost_url": req.child_docmost_url or "",
+        })
+        parent_entry["child_locations"] = children
+        history_store.save_entry(parent_entry)
+
+        parent_page_id = parent_entry.get("docmost_page_id")
+        if parent_page_id and parent_entry.get("location"):
+            from models import Location
+            parent_loc_obj = Location(**parent_entry["location"])
+            await docmost.save_location(
+                parent_loc_obj,
+                existing_page_id=parent_page_id,
+                parent_location=parent_entry.get("parent_location"),
+                child_locations=children,
+            )
+
+        # Update child entry's parent_location
+        try:
+            child_entry = history_store.get_entry(req.child_history_id)
+            child_entry["parent_location"] = {
+                "id": location_id,
+                "name": parent_entry.get("name", ""),
+                "type": parent_entry.get("location_type", ""),
+                "docmost_url": parent_entry.get("docmost_url", ""),
+            }
+            history_store.save_entry(child_entry)
+        except Exception as e:
+            logger.warning(f"Could not update child location with parent ref: {e}")
+
+        return {"success": True, "child_locations": children}
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Location entry not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/location/{location_id}/link-parent")
+async def link_location_parent(location_id: str, req: LinkLocationParentRequest):
+    """Set the parent location for this location and update both entries and Docmost pages."""
+    try:
+        child_entry = history_store.get_entry(location_id)
+        if child_entry.get("type") != "Location":
+            raise HTTPException(status_code=400, detail="Entry is not a Location")
+
+        parent_ref = {
+            "id": req.parent_history_id,
+            "name": req.parent_name,
+            "type": req.parent_type,
+            "docmost_url": req.parent_docmost_url or "",
+        }
+        child_entry["parent_location"] = parent_ref
+        history_store.save_entry(child_entry)
+
+        # Re-save this location's Docmost page with the parent section
+        child_page_id = child_entry.get("docmost_page_id")
+        if child_page_id and child_entry.get("location"):
+            from models import Location
+            child_loc_obj = Location(**child_entry["location"])
+            await docmost.save_location(
+                child_loc_obj,
+                existing_page_id=child_page_id,
+                parent_location=parent_ref,
+                child_locations=child_entry.get("child_locations") or None,
+            )
+
+        # Register as child on parent
+        try:
+            parent_entry = history_store.get_entry(req.parent_history_id)
+            children = parent_entry.get("child_locations", [])
+            children = [c for c in children if c.get("id") != location_id]
+            children.append({
+                "id": location_id,
+                "name": child_entry.get("name", ""),
+                "type": child_entry.get("location_type", ""),
+                "docmost_url": child_entry.get("docmost_url", ""),
+            })
+            parent_entry["child_locations"] = children
+            history_store.save_entry(parent_entry)
+
+            parent_page_id = parent_entry.get("docmost_page_id")
+            if parent_page_id and parent_entry.get("location"):
+                parent_loc_obj = Location(**parent_entry["location"])
+                await docmost.save_location(
+                    parent_loc_obj,
+                    existing_page_id=parent_page_id,
+                    parent_location=parent_entry.get("parent_location"),
+                    child_locations=children,
+                )
+        except Exception as e:
+            logger.warning(f"Could not update parent location's child list: {e}")
+
+        return {"success": True, "parent_location": parent_ref}
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Location entry not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")

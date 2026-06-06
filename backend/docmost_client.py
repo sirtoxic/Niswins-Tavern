@@ -44,7 +44,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
-from models import Character, Item, Shop, Faction, Monster
+from models import Character, Item, Shop, Faction, Monster, Location
 
 _DEFAULT_FOLDER_NAMES: dict[str, str] = {
     "npcs": "NPCs",
@@ -1067,4 +1067,168 @@ class DocmostClient:
             logger.warning(f"Could not update bestiary type index: {e}")
 
         logger.info(f"Saved monster '{monster.name}' to Docmost (page {page_id}, url={page_url})")
+        return page_id, page_url
+
+    # ------------------------------------------------------------------
+    # Location → Markdown
+    # ------------------------------------------------------------------
+
+    def _location_to_markdown(
+        self,
+        loc: Location,
+        parent_location: dict | None = None,
+        child_locations: list | None = None,
+    ) -> str:
+        lines = []
+
+        def h(level: int, text: str):
+            lines.append(f"{'#' * level} {text}\n")
+
+        h(1, loc.name)
+
+        # Subtitle line
+        meta_parts = [f"**{loc.location_type}**"]
+        if loc.climate:
+            meta_parts.append(loc.climate)
+        if loc.terrain:
+            meta_parts.append(loc.terrain)
+        if loc.population:
+            meta_parts.append(f"Pop. {loc.population}")
+        if loc.building_type:
+            meta_parts.append(loc.building_type)
+        lines.append(" · ".join(meta_parts) + "\n")
+
+        if loc.atmosphere:
+            lines.append(f"*{loc.atmosphere}*\n")
+
+        # Core stats band
+        stats = []
+        if loc.government:
+            stats.append(f"**Government:** {loc.government}")
+        if loc.economy:
+            stats.append(f"**Economy:** {loc.economy}")
+        if loc.dominant_culture:
+            stats.append(f"**Culture:** {loc.dominant_culture}")
+        if loc.condition:
+            stats.append(f"**Condition:** {loc.condition}")
+        if loc.owner:
+            stats.append(f"**Run by:** {loc.owner}")
+        for s in stats:
+            lines.append(s)
+        if stats:
+            lines.append("")
+
+        h(2, "Description")
+        lines.append(loc.description + "\n")
+
+        if loc.history:
+            h(2, "History")
+            lines.append(loc.history + "\n")
+
+        if loc.notable_features:
+            h(2, "Notable Features")
+            for f in loc.notable_features:
+                lines.append(f"- {f}")
+            lines.append("")
+
+        if loc.notable_npcs:
+            h(2, "Notable People")
+            for npc in loc.notable_npcs:
+                lines.append(f"**{npc.name}** — {npc.role}")
+                if npc.concept:
+                    lines.append(f"*{npc.concept}*")
+                lines.append("")
+
+        if loc.factions:
+            h(2, "Power Groups & Factions")
+            for f in loc.factions:
+                lines.append(f"- {f}")
+            lines.append("")
+
+        if loc.plot_hooks:
+            h(2, "Plot Hooks")
+            for hook in loc.plot_hooks:
+                lines.append(f"- {hook}")
+            lines.append("")
+
+        if loc.secrets:
+            h(2, "Secrets (DM Only)")
+            for s in loc.secrets:
+                lines.append(f"- {s}")
+            lines.append("")
+
+        if parent_location:
+            h(2, "Part Of")
+            name = parent_location.get("name", "Unknown")
+            loc_type = parent_location.get("type", "")
+            url = parent_location.get("docmost_url", "")
+            line = f"**{name}**" + (f" ({loc_type})" if loc_type else "")
+            if url:
+                line += f"  [View in Docmost]({url})"
+            lines.append(line + "\n")
+
+        if child_locations:
+            h(2, "Contains")
+            for child in child_locations:
+                cname = child.get("name", "Unknown")
+                ctype = child.get("type", "")
+                curl = child.get("docmost_url", "")
+                line = f"**{cname}**" + (f" ({ctype})" if ctype else "")
+                if curl:
+                    line += f"  [View in Docmost]({curl})"
+                lines.append(line + "\n")
+
+        return "\n".join(lines)
+
+    async def save_location(
+        self,
+        loc: Location,
+        existing_page_id: str | None = None,
+        parent_location: dict | None = None,
+        child_locations: list | None = None,
+    ) -> tuple[str, str]:
+        """Returns (page_id, page_url). Saves under Locations / {type} / {name}."""
+        await self._ensure_auth()
+        await self._ensure_space()
+
+        if existing_page_id:
+            content = (
+                self._location_to_markdown(loc, parent_location, child_locations)
+                + self._sync_footer("Re-synced")
+            )
+            page_slug = await self._replace_page(existing_page_id, loc.name, content)
+            page_url = self._build_page_url(page_slug)
+            logger.info(f"Updated location '{loc.name}' in Docmost (page {existing_page_id})")
+            return existing_page_id, page_url
+
+        content = (
+            self._location_to_markdown(loc, parent_location, child_locations)
+            + self._sync_footer("Created")
+        )
+        locations_root_id = await self._get_root_folder_page_id("locations")
+        type_folder_id = await self._get_or_create_folder_page(
+            self._space_id, loc.location_type, parent_page_id=locations_root_id
+        )
+        page_data = await self._create_page(
+            space_id=self._space_id,
+            title=loc.name,
+            content=content,
+            parent_page_id=type_folder_id,
+        )
+        page_id = page_data["id"]
+        page_slug = page_data.get("slug") or page_data.get("slugId") or page_id
+        page_url = self._build_page_url(page_slug)
+
+        entry = f"- [**{loc.name}**]({page_url}) — {loc.location_type}"
+        if loc.population:
+            entry += f", pop. {loc.population}"
+        if loc.atmosphere:
+            entry += f". {loc.atmosphere}"
+        entry += "\n"
+        try:
+            await self._append_to_page(type_folder_id, entry)
+        except Exception as e:
+            logger.warning(f"Could not update location type index: {e}")
+
+        logger.info(f"Saved location '{loc.name}' to Docmost (page {page_id}, url={page_url})")
         return page_id, page_url

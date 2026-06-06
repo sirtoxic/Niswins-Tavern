@@ -1,6 +1,6 @@
 // players.js — player character creation, party roster, stat editing
 
-import { setBusy, _escHtml, _showTokenUsage } from './utils.js';
+import { setBusy, toast, buildContextNote, getContextId, cacheHistoryEntry, _renderAssocLinks, _apiDetail, _escHtml, _showTokenUsage } from './utils.js';
 import { state } from './state.js';
 import { rollPcStats, _recalcAbilityScores } from './stats.js';
 import { renderSheet } from './forge.js';
@@ -57,7 +57,7 @@ export async function openPartyEntry(entryId) {
     document.getElementById('addToPartyResult').classList.add('hidden');
     _populatePcStatInputs(state.currentPlayerCharacter);
   } catch (e) {
-    alert(`Error loading character: ${e.message}`);
+    toast(`Error loading character: ${e.message}`, 'error');
   }
 }
 
@@ -87,11 +87,12 @@ export async function _submitPcGeneration(body, btnId, spinnerId, textId, defaul
     });
     if (!r.ok) {
       const err = await r.json();
-      throw new Error(err.detail || 'Generation failed');
+      throw new Error(_apiDetail(err.detail, 'Generation failed'));
     }
     const data = await r.json();
     state.currentPlayerCharacter = data.character;
     state.currentPlayerCharacterId = data.history_id ?? null;
+    cacheHistoryEntry({ id: data.history_id, type: 'Player Character', name: data.character.name, race: data.character.race, character_class: data.character.character_class, level: data.character.level, alignment: data.character.alignment, timestamp: new Date().toISOString() });
 
     document.getElementById('pcPlaceholder').classList.add('hidden');
     document.getElementById('pcSheet').classList.remove('hidden');
@@ -101,11 +102,12 @@ export async function _submitPcGeneration(body, btnId, spinnerId, textId, defaul
     document.getElementById('addToPartyBtn').classList.add('hidden');
     document.getElementById('addToPartyResult').classList.add('hidden');
     _populatePcStatInputs(state.currentPlayerCharacter);
+    _renderAssocLinks('playersAssocLinks', data.history_id, 'playersAssocSelect');
     _showTokenUsage(data.usage, tokenUsageId);
 
     await loadPartyRoster();
   } catch (e) {
-    alert(`Error: ${e.message}`);
+    toast(`Error: ${e.message}`, 'error');
     document.getElementById('pcPlaceholder').classList.remove('hidden');
     document.getElementById('pcSheet').classList.add('hidden');
   } finally {
@@ -117,7 +119,7 @@ export async function generatePlayerCharacter() {
   const concept = document.getElementById('pcConcept').value.trim();
   const race = document.getElementById('pcRace').value.trim();
   if (!concept || !race) {
-    alert('Please fill in Concept and Race before generating.');
+    toast('Please fill in Concept and Race before generating.', 'error');
     return;
   }
   if (!state.pcRolledStats) rollPcStats();
@@ -129,10 +131,11 @@ export async function generatePlayerCharacter() {
     alignment: document.getElementById('pcAlignment').value,
     appearance: document.getElementById('pcAppearance').value.trim(),
     background_detail: 'medium',
-    additional_notes: document.getElementById('pcNotes').value.trim(),
+      additional_notes: document.getElementById('pcNotes').value.trim(),
     generic_npc: false,
     player_name: document.getElementById('pcPlayerName').value.trim() || null,
     manual_ability_scores: state.pcRolledStats,
+    parent_context_id: getContextId('playersAssocSelect'),
   }, 'generatePcBtn', 'generatePcSpinner', 'generatePcBtnText', 'Generate Character', 'pcGenTokenUsage');
 }
 
@@ -140,7 +143,7 @@ export async function createManualCharacter() {
   const charName = document.getElementById('pcManualCharName').value.trim();
   const race = document.getElementById('pcManualRace').value.trim();
   if (!charName || !race) {
-    alert('Please fill in Character Name and Race.');
+    toast('Please fill in Character Name and Race.', 'error');
     return;
   }
   const background = document.getElementById('pcManualBackground').value.trim();
@@ -171,10 +174,8 @@ export async function createManualCharacter() {
 
 export async function addCurrentToParty() {
   if (!state.currentPlayerCharacterId) return;
-  const resultEl = document.getElementById('addToPartyResult');
   const btn = document.getElementById('addToPartyBtn');
   btn.disabled = true;
-  resultEl.classList.add('hidden');
 
   try {
     const r = await fetch(`/api/history/${state.currentPlayerCharacterId}/update`, {
@@ -184,16 +185,11 @@ export async function addCurrentToParty() {
     });
     if (!r.ok) throw new Error('Update failed');
 
-    resultEl.textContent = '✓ Added to party';
-    resultEl.className = 'text-xs text-center py-1 text-green-400';
-    resultEl.classList.remove('hidden');
+    toast('Added to party');
     btn.classList.add('hidden');
-
     await loadPartyRoster();
   } catch (e) {
-    resultEl.textContent = `✗ ${e.message}`;
-    resultEl.className = 'text-xs text-center py-1 text-red-400';
-    resultEl.classList.remove('hidden');
+    toast(e.message, 'error');
     btn.disabled = false;
   }
 }
@@ -202,8 +198,6 @@ export async function savePlayerCharacter() {
   if (!state.currentPlayerCharacter) return;
   const folder = document.getElementById('pcSaveFolder').value;
   setBusy('savePcBtn', 'savePcSpinner', 'savePcBtnText', true, 'Saving…');
-  const resultEl = document.getElementById('savePcResult');
-  resultEl.classList.add('hidden');
 
   try {
     const r = await fetch('/api/save', {
@@ -221,13 +215,9 @@ export async function savePlayerCharacter() {
       renderPartyRoster();
     }
 
-    resultEl.textContent = `✓ Saved to Docmost (page ${data.page_id})`;
-    resultEl.className = 'text-xs text-center py-1 text-green-400';
-    resultEl.classList.remove('hidden');
+    toast(`Saved to Docmost (page ${data.page_id})`);
   } catch (e) {
-    resultEl.textContent = `✗ ${e.message}`;
-    resultEl.className = 'text-xs text-center py-1 text-red-400';
-    resultEl.classList.remove('hidden');
+    toast(e.message, 'error');
   } finally {
     setBusy('savePcBtn', 'savePcSpinner', 'savePcBtnText', false, 'Save to Docmost');
   }
